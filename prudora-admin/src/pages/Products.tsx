@@ -3,6 +3,11 @@ import { supabase } from '../lib/supabase'
 import type { Product, ProductCategory } from '../types/database'
 
 const PAGE_SIZE_OPTIONS = [50, 100, 250, 500] as const
+const STATUS_OPTIONS = [
+  { value: '', label: 'Alle statuser' },
+  { value: 'approved', label: 'Godkjent' },
+  { value: 'rejected', label: 'Avvist' },
+] as const
 
 export function Products() {
   const [categories, setCategories] = useState<ProductCategory[]>([])
@@ -21,6 +26,7 @@ export function Products() {
   const [showCategoryPanel, setShowCategoryPanel] = useState(false)
   const [filterCategoryId, setFilterCategoryId] = useState<string>('')
   const [filterSearch, setFilterSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string>('')
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [showProductPanel, setShowProductPanel] = useState(false)
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null)
@@ -34,12 +40,15 @@ export function Products() {
     is_weight_item: false,
     category_id: '' as string,
     image_url: '',
+    barcode: '',
+    approval_status: 'approved' as 'pending' | 'approved' | 'rejected',
   })
   const nameInputRef = useRef<HTMLInputElement>(null)
   const productNameInputRef = useRef<HTMLInputElement>(null)
 
   const filteredProducts = products.filter((p) => {
     if (filterCategoryId && p.category_id !== filterCategoryId) return false
+    if (filterStatus && p.approval_status !== filterStatus) return false
     if (filterSearch.trim()) {
       const q = filterSearch.trim().toLowerCase()
       return (
@@ -82,7 +91,8 @@ export function Products() {
     const to = page * pageSize - 1
     const { data, error: e, count } = await supabase
       .from('products')
-      .select('id, name, supplier, manufacturer, unit, unit_price_amount, is_weight_item, category_id, image_url, created_at, updated_at', { count: 'exact' })
+      .select('id, name, supplier, manufacturer, unit, unit_price_amount, is_weight_item, category_id, image_url, barcode, approval_status, submitted_by, submitted_at, approved_by, approved_at, created_at, updated_at', { count: 'exact' })
+      .neq('approval_status', 'pending')
       .order('name')
       .range(from, to)
     if (e) {
@@ -176,6 +186,8 @@ export function Products() {
       is_weight_item: p.is_weight_item,
       category_id: p.category_id ?? '',
       image_url: p.image_url ?? '',
+      barcode: p.barcode ?? '',
+      approval_status: p.approval_status ?? 'approved',
     })
     setShowProductPanel(true)
     setError(null)
@@ -240,6 +252,8 @@ export function Products() {
       is_weight_item: false,
       category_id: '',
       image_url: '',
+      barcode: '',
+      approval_status: 'approved',
     })
     setError(null)
   }
@@ -259,6 +273,23 @@ export function Products() {
     }
     setError(null)
     setSubmitting(true)
+    const optimisticUpdatedAt = new Date().toISOString()
+    const nextLocal: Product = {
+      ...editingProduct,
+      name,
+      supplier: productForm.supplier.trim() || 'Diverse',
+      manufacturer: productForm.manufacturer.trim() || 'Diverse',
+      unit: productForm.unit.trim() || 'stk',
+      unit_price_amount: amount as any,
+      is_weight_item: productForm.is_weight_item,
+      category_id: productForm.category_id || null,
+      image_url: productForm.image_url.trim() || null,
+      barcode: productForm.barcode.trim() || null,
+      approval_status: productForm.approval_status,
+      updated_at: optimisticUpdatedAt,
+    }
+    // Oppdater UI umiddelbart
+    setProducts((prev) => prev.map((row) => (row.id === editingProduct.id ? nextLocal : row)))
     const { error: err } = await supabase
       .from('products')
       .update({
@@ -270,13 +301,16 @@ export function Products() {
         is_weight_item: productForm.is_weight_item,
         category_id: productForm.category_id || null,
         image_url: productForm.image_url.trim() || null,
-        updated_at: new Date().toISOString(),
+        barcode: productForm.barcode.trim() || null,
+        approval_status: productForm.approval_status,
+        updated_at: optimisticUpdatedAt,
       })
       .eq('id', editingProduct.id)
     if (err) setError(err.message)
     else {
       cancelProductForm()
-      await loadProducts()
+      // Re-sync i bakgrunnen (UI er allerede oppdatert)
+      void loadProducts()
     }
     setSubmitting(false)
   }
@@ -319,6 +353,18 @@ export function Products() {
         />
         <select
           className="filter-category"
+          value={filterStatus}
+          onChange={(e) => {
+            setFilterStatus(e.target.value)
+          }}
+          aria-label="Statusfilter"
+        >
+          {STATUS_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <select
+          className="filter-category"
           value={filterCategoryId}
           onChange={(e) => setFilterCategoryId(e.target.value)}
         >
@@ -358,6 +404,12 @@ export function Products() {
           <div className="products-list">
             {filteredProducts.map((p) => {
               const cat = p.category_id ? categories.find((c) => c.id === p.category_id) : null
+              const statusLabel =
+                p.approval_status === 'pending'
+                  ? 'Avventer'
+                  : p.approval_status === 'rejected'
+                    ? 'Avvist'
+                    : 'Godkjent'
               return (
                 <div key={p.id} className="product-row">
                   {p.image_url ? (
@@ -366,11 +418,33 @@ export function Products() {
                     <div className="product-thumb product-thumb-placeholder" aria-hidden />
                   )}
                   <div className="product-info">
-                    <span className="product-name">{p.name}</span>
+                    <span className="product-name">
+                      {p.name}{' '}
+                      <span
+                        className="product-status"
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 12,
+                          padding: '2px 8px',
+                          borderRadius: 999,
+                          border: '1px solid var(--border, #e5e7eb)',
+                          background:
+                            p.approval_status === 'pending'
+                              ? 'rgba(250, 204, 21, 0.15)'
+                              : p.approval_status === 'rejected'
+                                ? 'rgba(239, 68, 68, 0.12)'
+                                : 'rgba(34, 197, 94, 0.12)',
+                        }}
+                        title={p.approval_status}
+                      >
+                        {statusLabel}
+                      </span>
+                    </span>
                     <span className="product-meta">
                       {p.supplier} · {p.manufacturer} · {p.unit_price_amount} {p.unit}
                       {p.is_weight_item && ' (vekt)'}
                       {cat && ` · ${cat.name}`}
+                      {p.barcode ? ` · Strekkode: ${p.barcode}` : ''}
                     </span>
                   </div>
                   <div className="product-row-actions">
@@ -548,6 +622,32 @@ export function Products() {
                     placeholder="f.eks. Melk 1 l"
                     required
                   />
+                </label>
+                <label>
+                  Strekkode (unik, valgfritt)
+                  <input
+                    type="text"
+                    value={productForm.barcode}
+                    onChange={(e) => setProductForm((f) => ({ ...f, barcode: e.target.value }))}
+                    placeholder="f.eks. 7038010001234"
+                    inputMode="numeric"
+                  />
+                </label>
+                <label>
+                  Status
+                  <select
+                    value={productForm.approval_status}
+                    onChange={(e) =>
+                      setProductForm((f) => ({
+                        ...f,
+                        approval_status: e.target.value as 'pending' | 'approved' | 'rejected',
+                      }))
+                    }
+                  >
+                    <option value="approved">Godkjent</option>
+                    <option value="pending">Avventer</option>
+                    <option value="rejected">Avvist</option>
+                  </select>
                 </label>
                 <label>
                   Leverandør

@@ -17,21 +17,44 @@ import { BlurStatusBarView } from '@/components/BlurStatusBarView';
 import { useDesignColors } from '@/hooks/use-design-colors';
 import { spacing, radius, hairlineWidth } from '@/constants/design';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'expo-router';
 import type { Product, ProductCategory } from '@/types/database';
 
 type EnrichedProduct = Product & {
   category?: ProductCategory | null;
 };
 
+function formatPriceUpdatedShort(recordedAt: string) {
+  const t = Date.parse(recordedAt);
+  if (!Number.isFinite(t)) return '—';
+
+  const diffMs = Date.now() - t;
+  const hours = diffMs / 3600000;
+
+  if (hours < 24) return '<24';
+  if (hours < 72) return '< 3 dager';
+  if (hours < 7 * 24) return '< 1 uke';
+  return 'mer enn en uke';
+}
+
+type CheapestInfo = {
+  // Brukes for å vise prisbeløpet
+  price_amount: number;
+  // Brukes for å vise "hvor lenge siden sist"
+  latest_recorded_at: string;
+};
+
 export default function ProdukterScreen() {
   const insets = useSafeAreaInsets();
   const c = useDesignColors();
+  const router = useRouter();
 
   const [products, setProducts] = useState<EnrichedProduct[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const [cheapestByProductId, setCheapestByProductId] = useState<Record<string, CheapestInfo>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -43,8 +66,9 @@ export default function ProdukterScreen() {
           supabase
             .from('products')
             .select(
-              'id, name, supplier, manufacturer, unit, unit_price_amount, is_weight_item, category_id, image_url, created_at, updated_at'
+              'id, name, supplier, manufacturer, unit, unit_price_amount, is_weight_item, category_id, image_url, created_at, updated_at, barcode, approval_status'
             )
+            .eq('approval_status', 'approved')
             .order('name'),
           supabase.from('product_categories').select('id, name, created_at, updated_at').order('name'),
         ]);
@@ -68,6 +92,75 @@ export default function ProdukterScreen() {
 
       setProducts(enriched);
       setCategories((categoriesData ?? []) as ProductCategory[]);
+
+      // Finn billigste pris (approved) per produkt,
+      // men lagre også nyeste recorded_at for tids-teksten ("sist registrert").
+      const productIds = (productsData ?? []).map((p) => (p as any).id).filter((x: any) => typeof x === 'string' && x);
+      const chunkSize = 100;
+      const chunks: string[][] = [];
+      for (let i = 0; i < productIds.length; i += chunkSize) {
+        chunks.push(productIds.slice(i, i + chunkSize));
+      }
+
+      const cheapest: Record<string, CheapestInfo> = {};
+
+      for (const chunk of chunks) {
+        if (!chunk.length) continue;
+        // Finn nyeste recorded_at uansett butikk og uansett approval_status.
+        const { data: latestRowsAny, error: latestError } = await supabase
+          .from('product_prices')
+          .select('product_id, recorded_at')
+          .in('product_id', chunk);
+
+        const latestByProductId: Record<string, string> = {};
+        if (!latestError) {
+          for (const row of latestRowsAny ?? []) {
+            const product_id = (row as any).product_id as string | undefined;
+            const recorded_at = (row as any).recorded_at as string | undefined;
+            if (!product_id || !recorded_at) continue;
+
+            const prev = latestByProductId[product_id];
+            if (!prev || Date.parse(recorded_at) > Date.parse(prev)) {
+              latestByProductId[product_id] = recorded_at;
+            }
+          }
+        }
+
+        const { data: priceRows, error: priceError } = await supabase
+          .from('product_prices')
+          .select('product_id, price_amount, recorded_at')
+          .in('product_id', chunk)
+          .eq('approval_status', 'approved');
+
+        if (priceError) continue;
+
+        for (const row of priceRows ?? []) {
+          const product_id = (row as any).product_id as string | undefined;
+          if (!product_id) continue;
+          const price_amount = typeof (row as any).price_amount === 'number' ? (row as any).price_amount : Number((row as any).price_amount);
+          if (!Number.isFinite(price_amount)) continue;
+          const recorded_at = (row as any).recorded_at as string | undefined;
+          if (!recorded_at) continue;
+
+          const prev = cheapest[product_id];
+          const latestRecorded = latestByProductId[product_id] ?? recorded_at;
+          if (!prev) {
+            cheapest[product_id] = { price_amount, latest_recorded_at: latestRecorded };
+            continue;
+          }
+
+          // Oppdater billigst pris (beløpet)
+          if (price_amount < prev.price_amount) {
+            cheapest[product_id] = { ...prev, price_amount, latest_recorded_at: latestRecorded };
+          }
+
+          // Oppdater nyeste registreringstid (siste hentet inn)
+          if (Date.parse(latestRecorded) > Date.parse(prev.latest_recorded_at)) {
+            cheapest[product_id] = { ...cheapest[product_id], latest_recorded_at: latestRecorded };
+          }
+        }
+      }
+      setCheapestByProductId(cheapest);
       setLoading(false);
     })();
 
@@ -181,7 +274,14 @@ export default function ProdukterScreen() {
           >
             <VStack space="md" px={spacing.lg}>
               {filteredProducts.map((p) => (
-                <ProductCard key={p.id} product={p} />
+                <Pressable
+                  key={p.id}
+                  onPress={() => router.push(`/(tabs)/product/${p.id}`)}
+                  hitSlop={10}
+                  sx={{ _pressed: { opacity: 0.9 } }}
+                >
+                <ProductCard product={p} cheapest={cheapestByProductId[p.id]} />
+                </Pressable>
               ))}
             </VStack>
           </ScrollView>
@@ -225,11 +325,13 @@ function FilterChip({ label, active, onPress, c }: FilterChipProps) {
 
 type ProductCardProps = {
   product: EnrichedProduct;
+  cheapest?: CheapestInfo;
 };
 
-function ProductCard({ product }: ProductCardProps) {
+function ProductCard({ product, cheapest }: ProductCardProps) {
   const c = useDesignColors();
   const hasImage = !!product.image_url;
+  const showCheapest = cheapest && Number.isFinite(cheapest.price_amount);
 
   return (
     <Box
@@ -262,24 +364,28 @@ function ProductCard({ product }: ProductCardProps) {
           <Text fontSize={16} fontWeight="600" style={{ color: c.text }} numberOfLines={2}>
             {product.name}
           </Text>
-          <HStack justifyContent="space-between" alignItems="center" flexWrap="wrap">
-            <Text fontSize={13} style={{ color: c.textMuted }} numberOfLines={1}>
-              {product.manufacturer || product.supplier}
-            </Text>
-            <Text fontSize={13} fontWeight="600" style={{ color: c.textSecondary }}>
-              {product.unit_price_amount.toFixed(2)} kr / {product.unit}
-            </Text>
+          <HStack justifyContent="space-between" alignItems="flex-start" flexWrap="wrap">
+            <VStack space="xs" flex={1}>
+              <Text fontSize={13} style={{ color: c.textMuted }} numberOfLines={1}>
+                {product.manufacturer || product.supplier}
+              </Text>
+              {product.category && (
+                <Text fontSize={12} style={{ color: c.textMuted }} numberOfLines={1}>
+                  {product.category.name}
+                </Text>
+              )}
+            </VStack>
+            <VStack space="xs" alignItems="flex-end">
+              <Text fontSize={13} fontWeight="600" style={{ color: c.textSecondary }}>
+                {showCheapest ? `${cheapest!.price_amount.toFixed(2)} kr / ${product.unit}` : 'Pris mangler'}
+              </Text>
+              {showCheapest && (
+                <Text fontSize={12} style={{ color: c.textMuted }} numberOfLines={1}>
+                  Oppd. {formatPriceUpdatedShort(cheapest!.latest_recorded_at)}
+                </Text>
+              )}
+            </VStack>
           </HStack>
-          {product.category && (
-            <Text fontSize={12} style={{ color: c.textMuted }}>
-              {product.category.name}
-            </Text>
-          )}
-          {product.is_weight_item && (
-            <Text fontSize={11} style={{ color: c.textMuted }}>
-              Vektvare
-            </Text>
-          )}
         </VStack>
       </HStack>
     </Box>

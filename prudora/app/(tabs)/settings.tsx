@@ -11,9 +11,9 @@ import {
   ToastDescription,
   Pressable,
   HStack,
-  Divider,
 } from '@gluestack-ui/themed';
 import { StyleSheet, View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurStatusBarView } from '@/components/BlurStatusBarView';
 import { useTheme, type ThemePreference } from '@/lib/theme-context';
@@ -31,7 +31,7 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { preference, setPreference } = useTheme();
-  const { profile, updateProfile, updatePassword, signOut } = useAuth();
+  const { profile, updateProfile, signOut, changePassword } = useAuth();
   const toast = useToast();
   const c = useDesignColors();
   const isDark = c.background === '#000000';
@@ -40,11 +40,10 @@ export default function SettingsScreen() {
   const [lastName, setLastName] = useState('');
   const [age, setAge] = useState('');
   const [saving, setSaving] = useState(false);
-
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [changingPassword, setChangingPassword] = useState(false);
+  const [repeatNewPassword, setRepeatNewPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -106,72 +105,14 @@ export default function SettingsScreen() {
     });
   }
 
-  async function handleChangePassword() {
-    if (!newPassword.trim() || newPassword !== confirmPassword) {
-      toast.show({
-        placement: 'top',
-        containerStyle: { marginTop: insets.top },
-        render: ({ id }) => (
-          <Toast nativeID={`toast-${id}`} action="error" variant="solid">
-            <ToastTitle>Passord matcher ikke</ToastTitle>
-            <ToastDescription>Nytt passord og bekreftelse må være like.</ToastDescription>
-          </Toast>
-        ),
-      });
-      return;
-    }
-    if (newPassword.length < 6) {
-      toast.show({
-        placement: 'top',
-        containerStyle: { marginTop: insets.top },
-        render: ({ id }) => (
-          <Toast nativeID={`toast-${id}`} action="error" variant="solid">
-            <ToastTitle>Passord for kort</ToastTitle>
-            <ToastDescription>Nytt passord må være minst 6 tegn.</ToastDescription>
-          </Toast>
-        ),
-      });
-      return;
-    }
-    setChangingPassword(true);
-    const { error } = await updatePassword(currentPassword, newPassword);
-    setChangingPassword(false);
-    if (error) {
-      toast.show({
-        placement: 'top',
-        containerStyle: { marginTop: insets.top },
-        render: ({ id }) => (
-          <Toast nativeID={`toast-${id}`} action="error" variant="solid">
-            <ToastTitle>Kunne ikke endre passord</ToastTitle>
-            <ToastDescription>{error.message}</ToastDescription>
-          </Toast>
-        ),
-      });
-      return;
-    }
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    toast.show({
-      placement: 'top',
-      containerStyle: { marginTop: insets.top },
-      render: ({ id }) => (
-        <Toast nativeID={`toast-${id}`} action="success" variant="solid">
-          <ToastTitle>Passord er endret</ToastTitle>
-        </Toast>
-      ),
-    });
-  }
-
-  const canChangePassword =
-    currentPassword.trim() &&
-    newPassword.trim() &&
-    confirmPassword.trim() &&
-    newPassword === confirmPassword &&
-    newPassword.length >= 6;
-
   const [focusedField, setFocusedField] = useState<
-    'profileFirstName' | 'profileLastName' | 'profileAge' | 'currentPassword' | 'newPassword' | 'confirmPassword' | null
+    | 'profileFirstName'
+    | 'profileLastName'
+    | 'profileAge'
+    | 'currentPassword'
+    | 'newPassword'
+    | 'repeatNewPassword'
+    | null
   >(null);
 
   const baseInputStyle = {
@@ -182,7 +123,13 @@ export default function SettingsScreen() {
   };
 
   const getInputStyle = (
-    field: 'profileFirstName' | 'profileLastName' | 'profileAge' | 'currentPassword' | 'newPassword' | 'confirmPassword',
+    field:
+      | 'profileFirstName'
+      | 'profileLastName'
+      | 'profileAge'
+      | 'currentPassword'
+      | 'newPassword'
+      | 'repeatNewPassword',
   ) => [
     baseInputStyle,
     focusedField === field && {
@@ -190,6 +137,99 @@ export default function SettingsScreen() {
       borderWidth: 2,
     },
   ];
+
+  function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    return Promise.race([
+      p,
+      new Promise<T>((_resolve, reject) =>
+        setTimeout(() => reject(new Error(`${label} tok for lang tid. Prøv igjen.`)), ms)
+      ),
+    ]);
+  }
+
+  async function handleSavePassword() {
+    if (!currentPassword.trim() || !newPassword.trim() || !repeatNewPassword.trim()) {
+      toast.show({
+        placement: 'top',
+        containerStyle: { marginTop: insets.top },
+        render: ({ id }) => (
+          <Toast nativeID={`toast-${id}`} action="error" variant="solid">
+            <ToastTitle>Mangler felter</ToastTitle>
+            <ToastDescription>Fyll ut nåværende passord og skriv nytt passord to ganger.</ToastDescription>
+          </Toast>
+        ),
+      });
+      return;
+    }
+
+    if (newPassword !== repeatNewPassword) {
+      toast.show({
+        placement: 'top',
+        containerStyle: { marginTop: insets.top },
+        render: ({ id }) => (
+          <Toast nativeID={`toast-${id}`} action="error" variant="solid">
+            <ToastTitle>Passordene matcher ikke</ToastTitle>
+            <ToastDescription>De to nye passordene må være identiske.</ToastDescription>
+          </Toast>
+        ),
+      });
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      const { error } = await withTimeout(
+        changePassword({
+          currentPassword: currentPassword,
+          newPassword: newPassword,
+        }),
+        15000,
+        'Passordbytte'
+      );
+
+      if (error) {
+        toast.show({
+          placement: 'top',
+          containerStyle: { marginTop: insets.top },
+          render: ({ id }) => (
+            <Toast nativeID={`toast-${id}`} action="error" variant="solid">
+              <ToastTitle>Kunne ikke oppdatere passord</ToastTitle>
+              <ToastDescription>{error.message}</ToastDescription>
+            </Toast>
+          ),
+        });
+        return;
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setRepeatNewPassword('');
+      setFocusedField(null);
+      toast.show({
+        placement: 'top',
+        containerStyle: { marginTop: insets.top },
+        render: ({ id }) => (
+          <Toast nativeID={`toast-${id}`} action="success" variant="solid">
+            <ToastTitle>Passordet er lagret</ToastTitle>
+          </Toast>
+        ),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Ukjent feil';
+      toast.show({
+        placement: 'top',
+        containerStyle: { marginTop: insets.top },
+        render: ({ id }) => (
+          <Toast nativeID={`toast-${id}`} action="error" variant="solid">
+            <ToastTitle>Kunne ikke oppdatere passord</ToastTitle>
+            <ToastDescription>{msg}</ToastDescription>
+          </Toast>
+        ),
+      });
+    } finally {
+      setSavingPassword(false);
+    }
+  }
 
   return (
     <BlurStatusBarView edges={['top']}>
@@ -274,7 +314,7 @@ export default function SettingsScreen() {
                   style={{ color: c.text }}
                 />
               </Input>
-              <Input size="md" variant="outline" style={getInputStyle('profileAge')} keyboardType="number-pad">
+              <Input size="md" variant="outline" style={getInputStyle('profileAge')}>
                 <InputField
                   placeholder="Alder"
                   placeholderTextColor={c.textMuted}
@@ -282,7 +322,6 @@ export default function SettingsScreen() {
                   onChangeText={setAge}
                   onFocus={() => setFocusedField('profileAge')}
                   onBlur={() => setFocusedField((prev) => (prev === 'profileAge' ? null : prev))}
-                  keyboardType="number-pad"
                   style={{ color: c.text }}
                 />
               </Input>
@@ -296,10 +335,10 @@ export default function SettingsScreen() {
 
           <View style={{ height: hairlineWidth, backgroundColor: c.border }} />
 
-          {/* Passord */}
+          {/* Bytt passord */}
           <VStack space="md">
             <Text fontSize={14} fontWeight="700" style={{ color: c.textSecondary }}>
-              Endre passord
+              Bytt passord
             </Text>
             <VStack space="md">
               <Input size="md" variant="outline" style={getInputStyle('currentPassword')}>
@@ -310,8 +349,11 @@ export default function SettingsScreen() {
                   onChangeText={setCurrentPassword}
                   onFocus={() => setFocusedField('currentPassword')}
                   onBlur={() => setFocusedField((prev) => (prev === 'currentPassword' ? null : prev))}
-                  secureTextEntry
                   style={{ color: c.text }}
+                  type="password"
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
                 />
               </Input>
               <Input size="md" variant="outline" style={getInputStyle('newPassword')}>
@@ -322,27 +364,32 @@ export default function SettingsScreen() {
                   onChangeText={setNewPassword}
                   onFocus={() => setFocusedField('newPassword')}
                   onBlur={() => setFocusedField((prev) => (prev === 'newPassword' ? null : prev))}
-                  secureTextEntry
                   style={{ color: c.text }}
+                  type="password"
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
                 />
               </Input>
-              <Input size="md" variant="outline" style={getInputStyle('confirmPassword')}>
+              <Input size="md" variant="outline" style={getInputStyle('repeatNewPassword')}>
                 <InputField
-                  placeholder="Bekreft nytt passord"
+                  placeholder="Gjenta nytt passord"
                   placeholderTextColor={c.textMuted}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  onFocus={() => setFocusedField('confirmPassword')}
-                  onBlur={() => setFocusedField((prev) => (prev === 'confirmPassword' ? null : prev))}
-                  secureTextEntry
+                  value={repeatNewPassword}
+                  onChangeText={setRepeatNewPassword}
+                  onFocus={() => setFocusedField('repeatNewPassword')}
+                  onBlur={() => setFocusedField((prev) => (prev === 'repeatNewPassword' ? null : prev))}
                   style={{ color: c.text }}
+                  type="password"
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
                 />
               </Input>
               <PremiumButton
-                variant="outline"
-                title={changingPassword ? 'Endrer...' : 'Endre passord'}
-                onPress={handleChangePassword}
-                disabled={changingPassword || !canChangePassword}
+                title={savingPassword ? 'Lagrer...' : 'Lagre endringer'}
+                onPress={handleSavePassword}
+                disabled={savingPassword}
               />
             </VStack>
           </VStack>

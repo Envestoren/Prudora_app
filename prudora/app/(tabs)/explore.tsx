@@ -20,6 +20,7 @@ import { useDesignColors } from '@/hooks/use-design-colors';
 import { spacing, radius, hairlineWidth, cardShadowLight } from '@/constants/design';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { PremiumButton } from '@/components/ui/PremiumButton';
 
 type ShoppingList = {
   id: string;
@@ -236,23 +237,18 @@ export default function ShoppingListsScreen() {
                   </VStack>
                 </VStack>
                 <HStack space="sm" mt={8}>
-                  <Button
-                    flex={1}
+                  <PremiumButton
+                    title="Avbryt"
                     variant="outline"
-                    size="md"
                     onPress={() => {
                       setCreating(false);
                       setName('');
                       setIcon('📋');
                     }}
-                    isDisabled={submitting}
-                    borderRadius={radius.lg}
-                    sx={{ _pressed: { opacity: 0.9 } }}
-                  >
-                    <ButtonText style={{ color: c.text }}>
-                      Avbryt
-                    </ButtonText>
-                  </Button>
+                    disabled={submitting}
+                    style={{ flex: 1, minHeight: 40, paddingVertical: spacing.sm }}
+                    textStyle={{ fontSize: 14 }}
+                  />
                   <Button
                     flex={1}
                     variant="solid"

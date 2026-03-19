@@ -18,12 +18,16 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'bubble.left.and.bubble.right.fill': 'message',
   'chevron.left.forwardslash.chevron.right': 'code',
+  /** Tilbake-pil (SF Symbol → Material) */
+  'chevron.backward': 'arrow-back',
   'chevron.right': 'chevron-right',
   'gearshape.fill': 'settings',
   'storefront.fill': 'store',
   'list.bullet': 'list',
   'map.fill': 'map',
   'cart.fill': 'shopping-cart',
+  /** Pris-scan-fane */
+  'barcode.viewfinder': 'qr-code-scanner',
   'heart': 'favorite-border',
   'heart.fill': 'favorite',
 } as IconMapping;

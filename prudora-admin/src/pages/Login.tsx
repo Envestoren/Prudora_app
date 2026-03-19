@@ -37,7 +37,9 @@ export function Login({ onAdminVerified }: LoginProps) {
         if (!userId) throw new Error('Innlogging feilet')
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('id, first_name, last_name, age, email, is_admin, created_at, updated_at')
+          .select(
+            'id, first_name, last_name, age, email, is_admin, is_price_verified, price_verification_requested_at, created_at, updated_at'
+          )
           .eq('id', userId)
           .single()
         if (profileError || !profile) {

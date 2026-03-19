@@ -1,8 +1,10 @@
+import 'react-native-gesture-handler';
 import { GluestackUIProvider } from '@gluestack-ui/themed';
 import { config } from '@gluestack-ui/config';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { AuthProvider } from '@/lib/auth-context';
@@ -41,8 +43,10 @@ function RootLayoutContent() {
 
 export default function RootLayout() {
   return (
-    <AppThemeProvider>
-      <RootLayoutContent />
-    </AppThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppThemeProvider>
+        <RootLayoutContent />
+      </AppThemeProvider>
+    </GestureHandlerRootView>
   );
 }

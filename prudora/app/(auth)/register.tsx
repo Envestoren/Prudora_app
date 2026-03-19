@@ -215,8 +215,10 @@ export default function RegisterScreen() {
                       value={email}
                       onChangeText={setEmail}
                       onFocus={() => setFocusedField('email')}
-                      onBlur={() => setFocusedField((prev) => (prev === 'email' ? null : prev))}
-                      onBlur={() => setEmailTouched(true)}
+                      onBlur={() => {
+                        setFocusedField((prev) => (prev === 'email' ? null : prev));
+                        setEmailTouched(true);
+                      }}
                       keyboardType="email-address"
                       autoCapitalize="none"
                       style={{ color: c.text }}

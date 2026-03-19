@@ -42,6 +42,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: getAuthStorage(),
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: Platform.OS === 'web',
+    // Bruk no-op lock-funksjon for å unngå låsefeil ("Lock broken by another request with the 'steal' option")
+    // @ts-expect-error: 'lock' er ikke typet i alle versjoner av supabase-js, men støttes i auth-js
+    lock: async (_key: string, _isStolen: boolean, fn: () => Promise<unknown> | unknown) => {
+      return await fn();
+    },
   },
 });

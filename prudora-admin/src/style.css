@@ -483,6 +483,19 @@ tr:last-child td {
   border-bottom: 1px solid var(--border);
 }
 
+.product-row-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.product-row-select input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 .product-row-actions {
   display: flex;
   gap: 8px;

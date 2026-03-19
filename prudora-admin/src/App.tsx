@@ -5,12 +5,17 @@ import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
 import { Stores } from './pages/Stores'
 import { Products } from './pages/Products'
+import { ProductApprovals } from './pages/ProductApprovals'
+import { PriceSettings } from './pages/PriceSettings'
+import { PriceApprovals } from './pages/PriceApprovals'
 import { AdminLayout } from './components/AdminLayout'
 
 export default function App() {
   const [adminProfile, setAdminProfile] = useState<Profile | null>(null)
   const [checking, setChecking] = useState(true)
-  const [activeTab, setActiveTab] = useState<'users' | 'stores' | 'products'>('users')
+  const [activeTab, setActiveTab] = useState<
+    'users' | 'stores' | 'products' | 'approvals' | 'price-settings' | 'price-approvals'
+  >('users')
 
   const onLogout = useCallback(async () => {
     await supabase.auth.signOut()
@@ -35,7 +40,9 @@ export default function App() {
         if (!session?.user) return null
         const { data: profile } = await supabase
           .from('profiles')
-          .select('id, first_name, last_name, age, email, is_admin, created_at, updated_at')
+          .select(
+            'id, first_name, last_name, age, email, is_admin, is_price_verified, price_verification_requested_at, created_at, updated_at'
+          )
           .eq('id', session.user.id)
           .single()
         if (profile && (profile as Profile).is_admin) return profile as Profile
@@ -58,7 +65,9 @@ export default function App() {
           lastUserId = session.user.id
           const { data: p } = await supabase
             .from('profiles')
-            .select('id, first_name, last_name, age, email, is_admin, created_at, updated_at')
+            .select(
+              'id, first_name, last_name, age, email, is_admin, is_price_verified, price_verification_requested_at, created_at, updated_at'
+            )
             .eq('id', session.user.id)
             .single()
           if (!cancelled) {
@@ -96,6 +105,12 @@ export default function App() {
           <Dashboard profile={adminProfile} />
         ) : activeTab === 'stores' ? (
           <Stores />
+        ) : activeTab === 'approvals' ? (
+          <ProductApprovals />
+        ) : activeTab === 'price-settings' ? (
+          <PriceSettings />
+        ) : activeTab === 'price-approvals' ? (
+          <PriceApprovals />
         ) : (
           <Products />
         )}

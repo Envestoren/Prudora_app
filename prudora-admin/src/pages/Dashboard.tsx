@@ -21,7 +21,9 @@ export function Dashboard({ profile }: DashboardProps) {
     setError(null)
     const { data, error: e } = await supabase
       .from('profiles')
-      .select('id, first_name, last_name, age, email, is_admin, created_at, updated_at')
+      .select(
+        'id, first_name, last_name, age, email, is_admin, is_price_verified, price_verification_requested_at, created_at, updated_at'
+      )
       .order('created_at', { ascending: false })
     if (e) {
       setError(e.message)
@@ -30,6 +32,25 @@ export function Dashboard({ profile }: DashboardProps) {
       setUsers((data ?? []) as Profile[])
     }
     setLoading(false)
+  }
+
+  async function togglePriceVerified(p: Profile) {
+    setUpdatingId(p.id)
+    setError(null)
+    const { error: e } = await supabase
+      .from('profiles')
+      .update({
+        is_price_verified: !p.is_price_verified,
+        // Når vi godkjenner, lar vi eksisterende requested_at stå som historikk
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', p.id)
+    if (e) setError(e.message)
+    else
+      setUsers((prev) =>
+        prev.map((u) => (u.id === p.id ? { ...u, is_price_verified: !u.is_price_verified } : u))
+      )
+    setUpdatingId(null)
   }
 
   async function toggleAdmin(p: Profile) {
@@ -62,6 +83,7 @@ export function Dashboard({ profile }: DashboardProps) {
                 <th>Alder</th>
                 <th>Registrert</th>
                 <th>Admin</th>
+                <th>Pris-tilgang</th>
               </tr>
             </thead>
             <tbody>
@@ -83,6 +105,25 @@ export function Dashboard({ profile }: DashboardProps) {
                       />
                       <span>{u.is_admin ? 'Ja' : 'Nei'}</span>
                     </label>
+                  </td>
+                  <td>
+                    <div className="price-access-cell">
+                      <label className="toggle">
+                        <input
+                          type="checkbox"
+                          checked={u.is_price_verified}
+                          onChange={() => togglePriceVerified(u)}
+                          disabled={updatingId === u.id}
+                        />
+                        <span>{u.is_price_verified ? 'Verifisert' : 'Ikke verifisert'}</span>
+                      </label>
+                      {u.price_verification_requested_at && !u.is_price_verified && (
+                        <span className="hint">
+                          Søknad mottatt{' '}
+                          {new Date(u.price_verification_requested_at).toLocaleDateString('nb-NO')}
+                        </span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

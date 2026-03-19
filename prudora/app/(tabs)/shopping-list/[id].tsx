@@ -9,8 +9,6 @@ import {
   Pressable,
   Input,
   InputField,
-  Button,
-  ButtonText,
 } from '@gluestack-ui/themed';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -23,6 +21,8 @@ import { spacing, radius, hairlineWidth } from '@/constants/design';
 import { supabase } from '@/lib/supabase';
 import type { Product, Store } from '@/types/database';
 import { useAuth } from '@/lib/auth-context';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { PremiumButton } from '@/components/ui/PremiumButton';
 
 type ShoppingList = {
   id: string;
@@ -50,6 +50,11 @@ export default function ShoppingListDetailsScreen() {
   const c = useDesignColors();
   const router = useRouter();
   const { user } = useAuth();
+
+  const goBackToShoppingLists = () => {
+    // Handlelisteoversikt (tabben "Handlelister")
+    router.replace('/(tabs)/explore');
+  };
 
   const [list, setList] = useState<ShoppingList | null>(null);
   const [items, setItems] = useState<ShoppingListItem[]>([]);
@@ -140,8 +145,9 @@ export default function ShoppingListDetailsScreen() {
     const { data } = await supabase
       .from('products')
       .select(
-        'id, name, supplier, manufacturer, unit, unit_price_amount, is_weight_item, category_id, image_url, created_at, updated_at'
+        'id, name, supplier, manufacturer, unit, unit_price_amount, is_weight_item, category_id, image_url, created_at, updated_at, barcode, approval_status'
       )
+      .eq('approval_status', 'approved')
       .ilike('name', `%${q}%`)
       .limit(20);
     setSearchResults((data ?? []) as Product[]);
@@ -220,10 +226,26 @@ export default function ShoppingListDetailsScreen() {
     Keyboard.dismiss();
   };
 
+  /** Butikk/ikon lagres med én gang (Lagre-knapp vises bare ved endret navn). */
+  const persistStoreId = async (next: string | null) => {
+    if (!id || !list) return;
+    setStoreId(next);
+    setList(prev => (prev ? { ...prev, store_id: next } : prev));
+    await supabase.from('shopping_lists').update({ store_id: next }).eq('id', id);
+  };
+
+  const persistIcon = async (emoji: string) => {
+    if (!id || !list) return;
+    setShowIconPicker(false);
+    setIconDraft(emoji);
+    setList(prev => (prev ? { ...prev, icon: emoji } : prev));
+    await supabase.from('shopping_lists').update({ icon: emoji }).eq('id', id);
+  };
+
   const handleDeleteList = async () => {
     if (!id) return;
     await supabase.from('shopping_lists').delete().eq('id', id);
-    router.back();
+    goBackToShoppingLists();
   };
 
   const insetsStyle = {
@@ -231,6 +253,18 @@ export default function ShoppingListDetailsScreen() {
     paddingBottom: insets.bottom,
     paddingHorizontal: spacing.lg,
   };
+
+  /** Kun når bruker faktisk har endret navnet (ikke ikon/butikk) */
+  const isListNameDirty = useMemo(
+    () => (list ? nameDraft.trim() !== (list.name ?? '').trim() : false),
+    [list, nameDraft],
+  );
+
+  const compactHeaderBtnStyle = {
+    minHeight: 40,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  } as const;
 
   const baseInputStyle = {
     backgroundColor: c.surface,
@@ -296,10 +330,14 @@ export default function ShoppingListDetailsScreen() {
           <Text fontSize={16} fontWeight="600" style={{ color: c.text }}>
             Fant ikke handlelisten
           </Text>
-          <Pressable mt={spacing.md} onPress={() => router.back()}>
-            <Text fontSize={14} style={{ color: c.tint }}>
-              Gå tilbake
-            </Text>
+          <Pressable
+            mt={spacing.md}
+            onPress={goBackToShoppingLists}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Tilbake"
+          >
+            <IconSymbol name="chevron.backward" size={22} color={c.textSecondary} />
           </Pressable>
         </Box>
       </BlurStatusBarView>
@@ -312,21 +350,25 @@ export default function ShoppingListDetailsScreen() {
         <Box flex={1} style={{ backgroundColor: c.background, ...insetsStyle }}>
           <VStack space="lg" flex={1}>
             <HStack alignItems="center" justifyContent="space-between" mt={spacing.sm}>
-              <Pressable onPress={() => router.back()} hitSlop={10}>
-                <Text style={{ color: c.tint, fontSize: 14 }}>‹ Tilbake</Text>
+              <Pressable
+                onPress={goBackToShoppingLists}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Tilbake til handlelister"
+              >
+                <IconSymbol name="chevron.backward" size={22} color={c.textSecondary} />
               </Pressable>
               <Text fontSize={18} fontWeight="700" style={{ color: c.textSecondary }}>
                 Handleliste
               </Text>
-              <Button
-                size="xs"
+              <PremiumButton
+                title="Slett"
                 variant="outline"
-                borderRadius={radius.lg}
-                sx={{ _pressed: { opacity: 0.9 } }}
+                accentColor="#EF4444"
                 onPress={handleDeleteList}
-              >
-                <ButtonText style={{ color: '#EF4444', fontSize: 11 }}>Slett</ButtonText>
-              </Button>
+                style={compactHeaderBtnStyle}
+                textStyle={{ fontSize: 14 }}
+              />
             </HStack>
 
             <VStack space="md">
@@ -374,15 +416,14 @@ export default function ShoppingListDetailsScreen() {
                     />
                   </Input>
                 </Box>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onPress={handleSaveListMeta}
-                  borderRadius={radius.lg}
-                  sx={{ _pressed: { opacity: 0.9 } }}
-                >
-                  <ButtonText style={{ color: c.tint, fontSize: 13 }}>Lagre</ButtonText>
-                </Button>
+                {isListNameDirty && (
+                  <PremiumButton
+                    title="Lagre"
+                    onPress={handleSaveListMeta}
+                    style={compactHeaderBtnStyle}
+                    textStyle={{ fontSize: 14 }}
+                  />
+                )}
               </HStack>
               <VStack space="xs">
                 <Text fontSize={13} style={{ color: c.textSecondary }}>
@@ -390,7 +431,7 @@ export default function ShoppingListDetailsScreen() {
                 </Text>
                 <HStack flexWrap="wrap" space="sm">
                   <Pressable
-                    onPress={() => setStoreId(null)}
+                    onPress={() => void persistStoreId(null)}
                     style={{
                       paddingVertical: spacing.xs,
                       paddingHorizontal: spacing.sm,
@@ -413,7 +454,7 @@ export default function ShoppingListDetailsScreen() {
                     return (
                       <Pressable
                         key={store.id}
-                        onPress={() => setStoreId(store.id)}
+                        onPress={() => void persistStoreId(store.id)}
                         style={{
                           paddingVertical: spacing.xs,
                           paddingHorizontal: spacing.sm,
@@ -446,7 +487,7 @@ export default function ShoppingListDetailsScreen() {
                       return (
                         <Pressable
                           key={emoji}
-                          onPress={() => setIconDraft(emoji)}
+                          onPress={() => void persistIcon(emoji)}
                           hitSlop={8}
                         >
                           <Box

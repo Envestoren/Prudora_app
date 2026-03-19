@@ -55,6 +55,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="price-scan"
+        options={{
+          title: 'Pris-scan',
+          tabBarIcon: ({ color }) => <IconSymbol size={24} name="barcode.viewfinder" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="stores"
         options={{
           title: 'Butikker',
@@ -71,6 +78,13 @@ export default function TabLayout() {
       {/* Skjul detaljruta for handleliste fra tab-baren */}
       <Tabs.Screen
         name="shopping-list/[id]"
+        options={{
+          href: null,
+        }}
+      />
+      {/* Skjul produktdetalj fra tab-baren */}
+      <Tabs.Screen
+        name="product/[id]"
         options={{
           href: null,
         }}
