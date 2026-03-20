@@ -26,6 +26,7 @@ const MAPPING = {
   'list.bullet': 'list',
   'map.fill': 'map',
   'cart.fill': 'shopping-cart',
+  'chart.bar.fill': 'bar-chart',
   /** Pris-scan-fane */
   'barcode.viewfinder': 'qr-code-scanner',
   'heart': 'favorite-border',

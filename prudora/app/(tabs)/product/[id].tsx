@@ -672,7 +672,13 @@ export default function ProductDetailScreen() {
               </Text>
             </Box>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.lg }}>
+            <Pressable flex={1} onPress={() => setStorePickerOpen(false)}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: spacing.lg }}
+              >
+                <Pressable onPress={(e: any) => e?.stopPropagation?.()}>
               <VStack space="md">
                 <VStack space="xs">
                   <Text fontSize={14} fontWeight="800" style={{ color: c.textSecondary }}>
@@ -681,7 +687,7 @@ export default function ProductDetailScreen() {
                   <HStack space="sm" flexWrap="wrap">
                     {[
                       { mode: 'favorites' as const, label: 'Favoritter' },
-                        { mode: 'nearest' as const, label: 'nærmeste' },
+                      { mode: 'nearest' as const, label: 'Nærmeste' },
                       { mode: 'search' as const, label: 'Velg & søk' },
                     ].map((opt) => {
                       const active = storePickerMode === opt.mode;
@@ -984,7 +990,9 @@ export default function ProductDetailScreen() {
                   </Box>
                 )}
               </VStack>
-            </ScrollView>
+                </Pressable>
+              </ScrollView>
+            </Pressable>
           )}
         </VStack>
       </Box>

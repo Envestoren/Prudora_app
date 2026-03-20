@@ -89,6 +89,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      {/* Skjul butikk-prishistorikk fra tab-baren */}
+      <Tabs.Screen
+        name="product/[id]/store-prices/[storeId]"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
