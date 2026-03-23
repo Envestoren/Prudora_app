@@ -19,6 +19,7 @@ import { useAuth } from '@/lib/auth-context';
 import { BlurStatusBarView } from '@/components/BlurStatusBarView';
 import { PremiumButton } from '@/components/ui/PremiumButton';
 import { useDesignColors } from '@/hooks/use-design-colors';
+import { useTheme } from '@/lib/theme-context';
 import { spacing, radius, cardShadowLight, hairlineWidth } from '@/constants/design';
 
 const isEmailFormat = (s: string) => {
@@ -33,7 +34,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const { signIn, resetPasswordForEmail } = useAuth();
   const c = useDesignColors();
-  const isDark = c.background === '#000000';
+  const isDark = useTheme().resolvedScheme === 'dark';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

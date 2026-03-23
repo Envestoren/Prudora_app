@@ -14,12 +14,12 @@ export const spacing = {
   xxl: 40,
 } as const;
 
-/** Border radius – myk, premium look */
+/** Border radius – maksimal rundhet (pill-form) for myk, moderne uttrykk */
 export const radius = {
-  sm: 12,
-  md: 16,
-  lg: 20,
-  xl: 24,
+  sm: 9999,
+  md: 9999,
+  lg: 9999,
+  xl: 9999,
   full: 9999,
 } as const;
 

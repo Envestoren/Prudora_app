@@ -28,7 +28,7 @@ export function BlurStatusBarView({
       {edgeList.includes('top') && insets.top > 0 && (
         <BlurView
           intensity={Platform.OS === 'web' ? 50 : 60}
-          tint="dark"
+          tint={resolvedScheme === 'dark' ? 'dark' : 'light'}
           style={{
             position: 'absolute',
             top: 0,
@@ -43,7 +43,7 @@ export function BlurStatusBarView({
       {edgeList.includes('bottom') && insets.bottom > 0 && (
         <BlurView
           intensity={Platform.OS === 'web' ? 50 : 60}
-          tint="dark"
+          tint={resolvedScheme === 'dark' ? 'dark' : 'light'}
           style={{
             position: 'absolute',
             bottom: 0,

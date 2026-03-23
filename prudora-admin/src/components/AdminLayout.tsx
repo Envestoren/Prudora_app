@@ -19,8 +19,8 @@ function setStoredTheme(theme: Theme) {
 type AdminLayoutProps = {
   profile: Profile
   onLogout: () => void
-  activeTab: 'users' | 'stores' | 'products' | 'approvals' | 'price-settings' | 'price-approvals'
-  onTabChange: (tab: 'users' | 'stores' | 'products' | 'approvals' | 'price-settings' | 'price-approvals') => void
+  activeTab: 'users' | 'stores' | 'products' | 'store-prices'
+  onTabChange: (tab: 'users' | 'stores' | 'products' | 'store-prices') => void
   children: React.ReactNode
 }
 
@@ -87,33 +87,17 @@ export function AdminLayout({ profile, onLogout, activeTab, onTabChange, childre
         </button>
         <button
           type="button"
-          className={activeTab === 'approvals' ? 'active' : ''}
-          onClick={() => onTabChange('approvals')}
-        >
-          Godkjenning
-        </button>
-        <button
-          type="button"
           className={activeTab === 'products' ? 'active' : ''}
           onClick={() => onTabChange('products')}
         >
           Produkter
         </button>
-
         <button
           type="button"
-          className={activeTab === 'price-settings' ? 'active' : ''}
-          onClick={() => onTabChange('price-settings')}
+          className={activeTab === 'store-prices' ? 'active' : ''}
+          onClick={() => onTabChange('store-prices')}
         >
-          Prisinnstillinger
-        </button>
-
-        <button
-          type="button"
-          className={activeTab === 'price-approvals' ? 'active' : ''}
-          onClick={() => onTabChange('price-approvals')}
-        >
-          Priser til godkjenning
+          Butikkpriser
         </button>
       </nav>
 

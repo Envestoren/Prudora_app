@@ -6,13 +6,14 @@ import { BlurStatusBarView } from '@/components/BlurStatusBarView';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PremiumButton } from '@/components/ui/PremiumButton';
 import { useDesignColors } from '@/hooks/use-design-colors';
+import { useTheme } from '@/lib/theme-context';
 import { spacing, radius, cardShadowLight, hairlineWidth } from '@/constants/design';
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { profile, signOut } = useAuth();
   const c = useDesignColors();
-  const isDark = c.background === '#000000';
+  const isDark = useTheme().resolvedScheme === 'dark';
   const router = useRouter();
 
   return (
@@ -47,7 +48,7 @@ export default function HomeScreen() {
               sx={{ _pressed: { opacity: 0.9 } }}
             >
               <HStack space="md" alignItems="center">
-                <Box w={48} h={48} alignItems="center" justifyContent="center" style={{ backgroundColor: c.primary, borderRadius: 24 }}>
+                <Box w={48} h={48} alignItems="center" justifyContent="center" style={{ backgroundColor: c.primary, borderRadius: radius.full }}>
                   <Text fontSize={24}>📋</Text>
                 </Box>
                 <VStack flex={1} space="xs">
@@ -75,7 +76,7 @@ export default function HomeScreen() {
               sx={{ _pressed: { opacity: 0.9 } }}
             >
               <HStack space="md" alignItems="center">
-                <Box w={48} h={48} alignItems="center" justifyContent="center" style={{ backgroundColor: c.primary, borderRadius: 24 }}>
+                <Box w={48} h={48} alignItems="center" justifyContent="center" style={{ backgroundColor: c.primary, borderRadius: radius.full }}>
                   <Text fontSize={24}>📍</Text>
                 </Box>
                 <VStack flex={1} space="xs">

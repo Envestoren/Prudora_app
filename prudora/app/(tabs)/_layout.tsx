@@ -24,7 +24,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.tabIconSelected,
         tabBarInactiveTintColor: colors.tabIconDefault,
         tabBarStyle: {
-          backgroundColor: colorScheme === 'dark' ? '#000000' : '#FFFFFF',
+          backgroundColor: colors.background,
           borderTopColor: colors.border,
           borderTopWidth: 1,
         },

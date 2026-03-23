@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { BlurStatusBarView } from '@/components/BlurStatusBarView';
 import { useDesignColors } from '@/hooks/use-design-colors';
+import { useTheme } from '@/lib/theme-context';
 import { spacing, radius, hairlineWidth, cardShadowLight } from '@/constants/design';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -32,7 +33,7 @@ type ShoppingList = {
 export default function ShoppingListsScreen() {
   const insets = useSafeAreaInsets();
   const c = useDesignColors();
-  const isDark = c.background === '#000000';
+  const isDark = useTheme().resolvedScheme === 'dark';
   const { session } = useAuth();
   const router = useRouter();
 

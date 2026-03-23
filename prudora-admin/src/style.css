@@ -343,6 +343,28 @@ tr:last-child td {
   border-bottom-color: var(--accent);
 }
 
+.products-subtabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.products-subtabs button {
+  padding: 8px 14px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.products-subtabs button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+
 .admin-main {
   min-height: 200px;
 }

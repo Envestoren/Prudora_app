@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Product, ProductCategory } from '../types/database'
+import { ProductApprovals } from './ProductApprovals'
 
 const PAGE_SIZE_OPTIONS = [50, 100, 250, 500] as const
 const STATUS_OPTIONS = [
@@ -10,6 +11,7 @@ const STATUS_OPTIONS = [
 ] as const
 
 export function Products() {
+  const [activeSection, setActiveSection] = useState<'products' | 'approvals'>('products')
   const [categories, setCategories] = useState<ProductCategory[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [pageSize, setPageSize] = useState(100)
@@ -325,6 +327,44 @@ export function Products() {
     setDeletingProductId(null)
   }
 
+  const sectionTabs = (
+    <div className="products-subtabs" role="tablist" aria-label="Produktsider">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeSection === 'products'}
+        className={activeSection === 'products' ? 'active' : ''}
+        onClick={() => setActiveSection('products')}
+      >
+        Produkter
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeSection === 'approvals'}
+        className={activeSection === 'approvals' ? 'active' : ''}
+        onClick={() => setActiveSection('approvals')}
+      >
+        Godkjenning
+      </button>
+    </div>
+  )
+
+  if (activeSection === 'approvals') {
+    return (
+      <div className="products-page">
+        <div className="products-page-header">
+          <div>
+            <h2 className="section-title">Produkter</h2>
+            <p className="section-desc">Administrer produkter og godkjenninger.</p>
+          </div>
+        </div>
+        {sectionTabs}
+        <ProductApprovals />
+      </div>
+    )
+  }
+
   return (
     <div className="products-page">
       <div className="products-page-header">
@@ -340,6 +380,7 @@ export function Products() {
           Kategorier
         </button>
       </div>
+      {sectionTabs}
 
       {error && <p className="error">{error}</p>}
 

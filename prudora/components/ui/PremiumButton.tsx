@@ -26,11 +26,10 @@ export function PremiumButton({
   accentColor,
 }: PremiumButtonProps) {
   const { resolvedScheme } = useTheme();
-  const isDark = resolvedScheme === 'dark';
   const c = Colors[resolvedScheme];
 
   const getBg = (): string => {
-    if (disabled) return isDark ? '#2C2C2E' : '#F3F4F6';
+    if (disabled) return c.primaryMuted;
     if (variant === 'primary') return c.primary;
     return 'transparent';
   };
@@ -38,7 +37,7 @@ export function PremiumButton({
   const accent = accentColor ?? c.primary;
 
   const getTextColor = (): string => {
-    if (disabled) return isDark ? '#6B7280' : '#9CA3AF';
+    if (disabled) return c.textMuted;
     if (variant === 'primary') return '#FFFFFF';
     return accent;
   };
@@ -53,7 +52,7 @@ export function PremiumButton({
           backgroundColor: getBg(),
           borderRadius: radius.lg,
           borderWidth: variant === 'outline' ? 1 : 0,
-          borderColor: disabled ? (isDark ? '#374151' : '#E5E7EB') : accent,
+          borderColor: disabled ? c.border : accent,
           opacity: pressed ? 0.85 : 1,
         },
         style,

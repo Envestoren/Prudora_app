@@ -1,69 +1,77 @@
 /**
- * Premium design system colors.
- * Light/Dark mode støttes via useTheme().resolvedScheme (som bruker useColorScheme fra react-native når system).
+ * Design system colors – design_dark.md / design_light.md.
+ * Primary: #4F6F52, Secondary: #86A789, Neutral base: #F8FAF8.
+ * Light/Dark støttes via useTheme().resolvedScheme.
  */
 
 import { Platform } from 'react-native';
 
-/** Aksentfarge – dyp indigo/lilla for interaktive elementer */
-export const ACCENT = '#6366F1';
-export const ACCENT_MUTED_LIGHT = '#EEF2FF';
-export const ACCENT_MUTED_DARK = '#312E81';
+/** Primærfarge – rik jordfarge for interaktive elementer */
+export const PRIMARY = '#4F6F52';
+/** Sekundærfarge – harmonisk balanse for støtteelementer */
+export const SECONDARY = '#86A789';
+/** Nøytral bakgrunn – ren og tilgjengelig */
+export const NEUTRAL_BASE = '#F8FAF8';
 
 export const Colors = {
   light: {
-    /** Hovedbakgrunn */
-    background: '#FFFFFF',
+    /** Hovedbakgrunn – design neutral base */
+    background: NEUTRAL_BASE,
     /** Sekundære flater (kort, inputs, etc.) */
-    surface: '#F9FAFB',
-    text: '#111827',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
+    surface: '#FFFFFF',
+    text: '#1A1F1A',
+    textSecondary: '#4A5D4A',
+    textMuted: '#6B7B6B',
     /** Hairline border – svart med lav opacity */
     border: 'rgba(0,0,0,0.06)',
-    tint: ACCENT,
-    icon: '#6B7280',
-    tabIconDefault: '#9CA3AF',
-    tabIconSelected: ACCENT,
-    primary: ACCENT,
-    primaryMuted: ACCENT_MUTED_LIGHT,
+    tint: PRIMARY,
+    icon: '#4A5D4A',
+    tabIconDefault: '#6B7B6B',
+    tabIconSelected: PRIMARY,
+    primary: PRIMARY,
+    primaryMuted: '#E8F0E9',
+    secondary: SECONDARY,
+    secondaryMuted: '#D4E2D5',
   },
   dark: {
-    /** Ekte sort for OLED */
-    background: '#000000',
+    /** Mørk bakgrunn – dypt mørk med subtil grønn tone */
+    background: '#0D1210',
     /** Kort/elementer – lett hevet fra bakgrunn */
-    surface: '#1C1C1E',
-    text: '#F9FAFB',
-    textSecondary: '#D1D5DB',
-    textMuted: '#9CA3AF',
+    surface: '#1A211C',
+    text: '#F8FAF8',
+    textSecondary: '#B8C5B9',
+    textMuted: '#7A8B7C',
     /** Hairline border – hvit med lav opacity */
     border: 'rgba(255,255,255,0.08)',
-    tint: '#818CF8',
-    icon: '#D1D5DB',
-    tabIconDefault: '#9CA3AF',
-    tabIconSelected: '#818CF8',
-    primary: '#818CF8',
-    primaryMuted: ACCENT_MUTED_DARK,
+    tint: SECONDARY,
+    icon: '#B8C5B9',
+    tabIconDefault: '#7A8B7C',
+    tabIconSelected: SECONDARY,
+    primary: PRIMARY,
+    primaryMuted: '#2D3B2F',
+    secondary: SECONDARY,
+    secondaryMuted: '#3D4F40',
   },
 };
 
+/** Manrope – brukes på tvers av alle tekstelementer */
 export const Fonts = Platform.select({
   ios: {
-    sans: 'system-ui',
+    sans: 'Manrope',
     serif: 'ui-serif',
-    rounded: 'ui-rounded',
+    rounded: 'Manrope',
     mono: 'ui-monospace',
   },
   default: {
-    sans: 'normal',
+    sans: 'Manrope',
     serif: 'serif',
-    rounded: 'normal',
+    rounded: 'Manrope',
     mono: 'monospace',
   },
   web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    sans: "Manrope, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    rounded: "Manrope, 'SF Pro Rounded', sans-serif",
+    mono: "SFMono-Regular, Menlo, Monaco, Consolas, monospace",
   },
 });

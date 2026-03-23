@@ -34,7 +34,7 @@ export default function SettingsScreen() {
   const { profile, updateProfile, signOut, changePassword } = useAuth();
   const toast = useToast();
   const c = useDesignColors();
-  const isDark = c.background === '#000000';
+  const isDark = useTheme().resolvedScheme === 'dark';
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
