@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Text,
@@ -13,12 +13,15 @@ import {
 import { StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Haptics from 'expo-haptics';
 import { BlurStatusBarView } from '@/components/BlurStatusBarView';
 import { useDesignColors } from '@/hooks/use-design-colors';
 import { spacing, radius, hairlineWidth } from '@/constants/design';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';
 import type { Product, ProductCategory } from '@/types/database';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 type EnrichedProduct = Product & {
   category?: ProductCategory | null;
@@ -55,6 +58,10 @@ export default function ProdukterScreen() {
   const [search, setSearch] = useState('');
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [cheapestByProductId, setCheapestByProductId] = useState<Record<string, CheapestInfo>>({});
+  const [permission, requestPermission] = useCameraPermissions();
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const lastScanRef = useRef<{ value: string; at: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,6 +195,68 @@ export default function ProdukterScreen() {
     borderColor: searchFocused ? c.primary : c.border,
   };
 
+  const openScanner = useCallback(async () => {
+    setScanMessage(null);
+    if (!permission) return;
+    if (!permission.granted) {
+      const res = await requestPermission();
+      if (!res.granted) {
+        setScanMessage('Kameratilgang er nødvendig for å scanne strekkoder.');
+        return;
+      }
+    }
+    setScannerOpen(true);
+  }, [permission, requestPermission]);
+
+  const lookupProductByBarcode = useCallback(
+    async (barcode: string) => {
+      const code = barcode.trim();
+      if (!code) return;
+
+      const { data, error } = await supabase
+        .from('products')
+        .select(
+          'id, name, supplier, manufacturer, unit, unit_price_amount, is_weight_item, category_id, image_url, created_at, updated_at, barcode, approval_status'
+        )
+        .eq('barcode', code)
+        .eq('approval_status', 'approved')
+        .maybeSingle();
+
+      if (error) {
+        setScanMessage(error.message ?? 'Kunne ikke slå opp strekkode.');
+        return;
+      }
+      if (!data?.id) {
+        setScanMessage('Produktet er ikke registrert eller strekkoden er ukjent.');
+        return;
+      }
+      setScanMessage(null);
+      router.push(`/(tabs)/product/${data.id}`);
+    },
+    [router]
+  );
+
+  const handleBarcodeScanned = useCallback(
+    async (payload: { data?: string } | { raw?: string } | any) => {
+      const raw = (payload?.data ?? payload?.raw ?? '').trim();
+      if (!raw) return;
+
+      const now = Date.now();
+      const last = lastScanRef.current;
+      if (last && last.value === raw && now - last.at < 1500) return;
+      lastScanRef.current = { value: raw, at: now };
+
+      setScannerOpen(false);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {
+        // ignore haptics errors
+      }
+      await lookupProductByBarcode(raw);
+    },
+    [lookupProductByBarcode]
+  );
+
   if (loading) {
     return (
       <BlurStatusBarView edges={['top']}>
@@ -214,19 +283,48 @@ export default function ProdukterScreen() {
         <Text fontSize={20} fontWeight="700" style={{ color: c.textSecondary }}>
           Produkter
         </Text>
-        <Input size="md" variant="outline" style={inputStyle}>
-          <InputField
-            placeholder="Søk etter produkt, leverandør eller produsent"
-            placeholderTextColor={c.textMuted}
-            value={search}
-            onChangeText={setSearch}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            style={{ color: c.text }}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-        </Input>
+        <HStack alignItems="center" space="sm">
+          <Box flex={1}>
+            <Input size="md" variant="outline" style={inputStyle}>
+              <InputField
+                placeholder="Søk etter produkt, leverandør eller produsent"
+                placeholderTextColor={c.textMuted}
+                value={search}
+                onChangeText={setSearch}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
+                style={{ color: c.text }}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </Input>
+          </Box>
+          <Pressable
+            onPress={() => {
+              void openScanner();
+            }}
+            hitSlop={10}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: c.surface,
+              borderWidth: hairlineWidth,
+              borderColor: c.border,
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Skann strekkode"
+          >
+            <IconSymbol name="barcode.viewfinder" size={18} color={c.textSecondary} />
+          </Pressable>
+        </HStack>
+        {scanMessage && (
+          <Text fontSize={12} style={{ color: c.error ?? '#ff4d4f' }}>
+            {scanMessage}
+          </Text>
+        )}
         {categories.length > 0 && (
           <ScrollView
             horizontal
@@ -285,6 +383,46 @@ export default function ProdukterScreen() {
               ))}
             </VStack>
           </ScrollView>
+        )}
+        {scannerOpen && (
+          <Box
+            position="absolute"
+            top={0}
+            left={0}
+            right={0}
+            bottom={0}
+            style={{ backgroundColor: '#000' }}
+          >
+            <CameraView
+              style={{ flex: 1 }}
+              facing="back"
+              onBarcodeScanned={handleBarcodeScanned as any}
+            />
+            <Box
+              position="absolute"
+              top={0}
+              left={0}
+              right={0}
+              pt={insets.top + spacing.sm}
+              px={spacing.lg}
+            >
+              <HStack alignItems="center" justifyContent="space-between">
+                <Text fontSize={16} fontWeight="700" style={{ color: '#fff' }}>
+                  Scanner
+                </Text>
+                <Pressable onPress={() => setScannerOpen(false)} hitSlop={10}>
+                  <Text fontSize={14} style={{ color: '#fff' }}>
+                    Lukk
+                  </Text>
+                </Pressable>
+              </HStack>
+            </Box>
+            <Box position="absolute" left={0} right={0} bottom={insets.bottom + spacing.lg} px={spacing.lg}>
+              <Text fontSize={13} style={{ color: 'rgba(255,255,255,0.85)' }}>
+                Hold strekkoden innenfor kameraet.
+              </Text>
+            </Box>
+          </Box>
         )}
       </Box>
     </BlurStatusBarView>

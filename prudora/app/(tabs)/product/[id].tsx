@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { Box, HStack, Pressable, ScrollView, Spinner, Text, VStack } from '@gluestack-ui/themed';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -178,6 +178,7 @@ export default function ProductDetailScreen() {
   const [storePickerMode, setStorePickerMode] = useState<'favorites' | 'nearest' | 'search'>('nearest');
   const [favoriteStoreIds, setFavoriteStoreIds] = useState<string[]>([]);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const hasAppliedInitialFavoriteSelection = useRef(false);
 
   // "Sist hentet inn" (uansett butikk/status)
   const [latestOverallRecordedAt, setLatestOverallRecordedAt] = useState<string | null>(null);
@@ -196,6 +197,7 @@ export default function ProductDetailScreen() {
       setPriceRows([]);
       setStoreById({});
       setSelectedStoreIds([]);
+      hasAppliedInitialFavoriteSelection.current = false;
 
       const { data: productData, error: productError } = await supabase
         .from('products')
@@ -439,10 +441,6 @@ export default function ProductDetailScreen() {
     return storesByDistance.slice(0, 5).map((h) => h.store_id);
   }, [storesByDistance]);
 
-  const nearestStoreIdsTop3 = useMemo(() => {
-    return storesByDistance.slice(0, 3).map((h) => h.store_id);
-  }, [storesByDistance]);
-
   // Sørg for at graf og "Nyeste priser" bare viser butikker som matcher valgt modus.
   useEffect(() => {
     if (storePickerMode === 'favorites') {
@@ -479,13 +477,24 @@ export default function ProductDetailScreen() {
 
   useEffect(() => {
     const allIds = historiesAll.map((h) => h.store_id);
-    setSelectedStoreIds((prev) => {
-      const stillAvailable = prev.filter((id) => allIds.includes(id));
-      if (stillAvailable.length > 0) return stillAvailable;
-      // Ingen automatisk forhåndsvalg. Brukeren velger via picker.
-      return [];
-    });
-  }, [historiesAll]);
+    if (!allIds.length) return;
+
+    // Første gang data er lastet: forhåndsvelg alle favorittbutikker med data.
+    if (!hasAppliedInitialFavoriteSelection.current) {
+      const favoriteWithData = favoriteStoreIds.filter((id) => allIds.includes(id));
+      if (favoriteWithData.length > 0) {
+        setSelectedStoreIds(favoriteWithData);
+        setStorePickerMode('favorites');
+      } else {
+        setSelectedStoreIds((prev) => prev.filter((id) => allIds.includes(id)));
+      }
+      hasAppliedInitialFavoriteSelection.current = true;
+      return;
+    }
+
+    // Etter init: behold brukerens valg, men fjern butikker som ikke lenger finnes i datasettet.
+    setSelectedStoreIds((prev) => prev.filter((id) => allIds.includes(id)));
+  }, [historiesAll, favoriteStoreIds]);
 
   const selectedHistories = useMemo(
     () => historiesFiltered.filter((h) => selectedStoreIds.includes(h.store_id)),
@@ -552,7 +561,7 @@ export default function ProductDetailScreen() {
   const toggleStore = (storeId: string) => {
     setSelectedStoreIds((prev) => {
       if (prev.includes(storeId)) return prev.filter((id) => id !== storeId);
-      if (prev.length >= MAX_STORE_SELECTION) return prev;
+      if (storePickerMode !== 'favorites' && prev.length >= MAX_STORE_SELECTION) return prev;
       return [...prev, storeId];
     });
   };
@@ -701,8 +710,8 @@ export default function ProductDetailScreen() {
 
                             if (nextOpen) {
                               if (opt.mode === 'nearest') {
-                                // Vis fem nærmeste, men forhåndsvelg kun tre.
-                                setSelectedStoreIds(nearestStoreIdsTop3);
+                                // Vis og forhåndsvelg fem nærmeste.
+                                setSelectedStoreIds(nearestStoreIds5);
                               }
                               if (opt.mode === 'search') {
                                 // Ingen forhåndsvalg i "Velg & søk"
@@ -772,7 +781,8 @@ export default function ProductDetailScreen() {
                         <VStack space="xs">
                           {storePickerResults.map((h) => {
                             const active = selectedStoreIds.includes(h.store_id);
-                            const canSelectMore = active || selectedStoreIds.length < MAX_STORE_SELECTION;
+                            const canSelectMore =
+                              active || storePickerMode === 'favorites' || selectedStoreIds.length < MAX_STORE_SELECTION;
                             const color = storeColors[h.store_id] ?? '#2563EB';
                             const store = h.store;
                             const distanceLabel =

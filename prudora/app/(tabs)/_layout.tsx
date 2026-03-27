@@ -55,6 +55,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="produkt-abonnement"
+        options={{
+          title: 'Abonnement',
+          tabBarIcon: ({ color }) => <IconSymbol size={24} name="bell.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="price-scan"
         options={{
           title: 'Pris-scan',
@@ -92,6 +99,13 @@ export default function TabLayout() {
       {/* Skjul butikk-prishistorikk fra tab-baren */}
       <Tabs.Screen
         name="product/[id]/store-prices/[storeId]"
+        options={{
+          href: null,
+        }}
+      />
+      {/* Skjul varselsimulator fra tab-baren */}
+      <Tabs.Screen
+        name="varselsimulator"
         options={{
           href: null,
         }}

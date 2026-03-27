@@ -1,17 +1,6 @@
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
 
 /**
  * Forespør tillatelse og hent Expo push-token.
@@ -21,9 +10,29 @@ export async function registerForExpoPushTokenAsync(): Promise<string | null> {
   if (Platform.OS === 'web') {
     return null;
   }
+  // Expo Go (SDK 53+) støtter ikke remote push via expo-notifications.
+  // Krever development build / production build.
+  const isExpoGo =
+    Constants.appOwnership === 'expo' ||
+    Constants.executionEnvironment === 'storeClient';
+  if (isExpoGo) {
+    return null;
+  }
   if (!Device.isDevice) {
     return null;
   }
+
+  const Notifications = await import('expo-notifications');
+
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
 
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;

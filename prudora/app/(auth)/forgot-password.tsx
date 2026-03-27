@@ -59,7 +59,7 @@ export default function ForgotPasswordScreen() {
     try {
       const redirectTo =
         Platform.OS === 'web'
-          ? `${window.location.origin}/(auth)/update-password`
+          ? `${window.location.origin}/update-password`
           : 'prudora://update-password';
       const { error } = await resetPasswordForEmail(email.trim(), redirectTo);
       if (error) {

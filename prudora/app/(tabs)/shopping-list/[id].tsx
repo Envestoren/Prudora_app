@@ -69,8 +69,8 @@ export const options = {
   headerShown: false,
 };
 
-/** Maks antall butikker som kan sammenlignes samtidig (stående visning). */
-const MAX_COMPARE_STORES = 2;
+/** Maks antall butikker som vises samtidig i varesammenligningstabellen. */
+const MAX_MATRIX_STORES = 2;
 
 export default function ShoppingListDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -98,7 +98,7 @@ export default function ShoppingListDetailsScreen() {
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [showStorePicker, setShowStorePicker] = useState(false);
   const [showComparisonPanel, setShowComparisonPanel] = useState(false);
-  const [showCompareStorePicker, setShowCompareStorePicker] = useState(true);
+  const [showCompareStorePicker, setShowCompareStorePicker] = useState(false);
   const [showCompareInfoAlert, setShowCompareInfoAlert] = useState(false);
   const [showMatrixInfoAlert, setShowMatrixInfoAlert] = useState(false);
   const [showListStoreInfoAlert, setShowListStoreInfoAlert] = useState(false);
@@ -106,7 +106,7 @@ export default function ShoppingListDetailsScreen() {
   const [storeId, setStoreId] = useState<string | null>(null);
   const [favoriteStores, setFavoriteStores] = useState<Store[]>([]);
   const [storePriceByProductId, setStorePriceByProductId] = useState<Record<string, StorePriceEntry>>({});
-  const [compareMode, setCompareMode] = useState<'favorites' | 'nearest' | 'search'>('nearest');
+  const [compareMode, setCompareMode] = useState<'favorites' | 'nearest' | 'search'>('favorites');
   const [compareSearch, setCompareSearch] = useState('');
   const [compareSelectedStoreIds, setCompareSelectedStoreIds] = useState<string[]>([]);
   const [comparisonRows, setComparisonRows] = useState<ComparePriceRow[]>([]);
@@ -497,15 +497,14 @@ export default function ShoppingListDetailsScreen() {
   }, [compareStoreIdsAll, comparisonStoresById, userLocation]);
 
   const compareNearest5Ids = useMemo(() => compareStoresSorted.slice(0, 5).map((s) => s.id), [compareStoresSorted]);
-  const compareNearest2Ids = useMemo(() => compareStoresSorted.slice(0, MAX_COMPARE_STORES).map((s) => s.id), [compareStoresSorted]);
   const compareFavoriteIds = useMemo(
-    () => favoriteStores.map((s) => s.id).filter((id) => compareStoreIdsAll.includes(id)),
-    [favoriteStores, compareStoreIdsAll]
+    () => favoriteStores.map((s) => s.id),
+    [favoriteStores]
   );
 
   const comparePickerResults = useMemo(() => {
     if (compareMode === 'favorites') {
-      return compareFavoriteIds.map((id) => comparisonStoresById[id]).filter((s): s is Store => !!s);
+      return favoriteStores;
     }
     if (compareMode === 'nearest') {
       return compareNearest5Ids.map((id) => comparisonStoresById[id]).filter((s): s is Store => !!s);
@@ -514,11 +513,11 @@ export default function ShoppingListDetailsScreen() {
     const base = compareStoresSorted.slice(0, 5);
     if (!q) return base;
     return compareStoresSorted.filter((s) => `${s.chain} ${s.name ?? ''} ${s.address}`.toLowerCase().includes(q));
-  }, [compareMode, compareFavoriteIds, compareNearest5Ids, comparisonStoresById, compareSearch, compareStoresSorted]);
+  }, [compareMode, compareFavoriteIds, compareNearest5Ids, comparisonStoresById, compareSearch, compareStoresSorted, favoriteStores]);
 
   useEffect(() => {
     if (compareMode === 'nearest') {
-      setCompareSelectedStoreIds(compareNearest2Ids);
+      setCompareSelectedStoreIds(compareNearest5Ids);
       return;
     }
     if (compareMode === 'search') {
@@ -526,15 +525,9 @@ export default function ShoppingListDetailsScreen() {
       return;
     }
     if (compareMode === 'favorites') {
-      setCompareSelectedStoreIds(compareFavoriteIds.slice(0, MAX_COMPARE_STORES));
+      setCompareSelectedStoreIds(compareFavoriteIds);
     }
-  }, [compareMode, compareNearest2Ids, compareFavoriteIds]);
-
-  useEffect(() => {
-    setCompareSelectedStoreIds((prev) =>
-      prev.length > MAX_COMPARE_STORES ? prev.slice(0, MAX_COMPARE_STORES) : prev
-    );
-  }, []);
+  }, [compareMode, compareNearest5Ids, compareFavoriteIds]);
 
   const commonComparableProductIds = useMemo(() => {
     if (compareSelectedStoreIds.length === 0) return [] as string[];
@@ -608,16 +601,26 @@ export default function ShoppingListDetailsScreen() {
     [compareSeriesByStore, compareSelectedStoreIds]
   );
 
+  const chartPalette = useMemo(
+    () => ['#2563EB', '#DC2626', '#16A34A', '#D97706', '#7C3AED', '#0891B2', '#DB2777', '#4B5563'],
+    []
+  );
+
+  const matrixVisibleStoreIds = useMemo(
+    () => compareSelectedStoreIds.slice(0, MAX_MATRIX_STORES),
+    [compareSelectedStoreIds]
+  );
+
   const compareChartSeries = useMemo(() => {
-    return selectedCompareSeries.map((s) => ({
+    return selectedCompareSeries.map((s, idx) => ({
       id: s.storeId,
       label: s.store?.name ? `${s.store.chain} – ${s.store.name}` : (s.store?.chain ?? 'Butikk'),
-      color: '#2563EB',
+      color: chartPalette[idx % chartPalette.length],
       data: s.points
         .filter((p) => p.missingCount === 0)
         .map((p) => ({ x: p.x, y: p.y, label: new Date(p.x).toLocaleDateString('nb-NO', { day: '2-digit', month: '2-digit' }) })) satisfies ChartDataPoint[],
     }));
-  }, [selectedCompareSeries]);
+  }, [chartPalette, selectedCompareSeries]);
 
   const compareRanking = useMemo(() => {
     return selectedCompareSeries
@@ -626,7 +629,7 @@ export default function ShoppingListDetailsScreen() {
   }, [selectedCompareSeries]);
 
   const compareLatestPriceByStoreProduct = useMemo(() => {
-    const selectedSet = new Set(compareSelectedStoreIds);
+    const selectedSet = new Set(matrixVisibleStoreIds);
     const byStoreProduct: Record<string, Record<string, number>> = {};
     const sorted = [...comparisonRows].sort(
       (a, b) => Date.parse(b.recorded_at) - Date.parse(a.recorded_at)
@@ -640,7 +643,7 @@ export default function ShoppingListDetailsScreen() {
     }
 
     return byStoreProduct;
-  }, [comparisonRows, compareSelectedStoreIds]);
+  }, [comparisonRows, matrixVisibleStoreIds]);
 
   const compareItemRows = useMemo(() => {
     const productMap = new Map<string, ShoppingListItem>();
@@ -650,7 +653,7 @@ export default function ShoppingListDetailsScreen() {
     }
 
     return Array.from(productMap.values()).map((item) => {
-      const entries = compareSelectedStoreIds.map((storeId) => {
+      const entries = matrixVisibleStoreIds.map((storeId) => {
         const amount = compareLatestPriceByStoreProduct[storeId]?.[item.product_id] ?? null;
         const total = amount != null ? amount * (item.quantity || 0) : null;
         return { storeId, amount, total };
@@ -663,7 +666,7 @@ export default function ShoppingListDetailsScreen() {
 
       return { item, entries, cheapestTotal };
     });
-  }, [items, compareSelectedStoreIds, compareLatestPriceByStoreProduct]);
+  }, [items, matrixVisibleStoreIds, compareLatestPriceByStoreProduct]);
 
   // I portrett skal matrisen gi plass til ca. to butikkolonner samtidig.
   const matrixProductColWidth = useMemo(() => {
@@ -675,7 +678,7 @@ export default function ShoppingListDetailsScreen() {
 
   const matrixStoreColWidth = useMemo(() => {
     const available = Math.max(220, screenWidth - matrixProductColWidth - (spacing.lg * 2));
-    return Math.max(92, Math.round(available / MAX_COMPARE_STORES));
+    return Math.max(92, Math.round(available / MAX_MATRIX_STORES));
   }, [screenWidth, matrixProductColWidth]);
 
   if (loading) {
@@ -1299,15 +1302,12 @@ export default function ShoppingListDetailsScreen() {
                           <VStack space="xs">
                             {comparePickerResults.map((s) => {
                               const active = compareSelectedStoreIds.includes(s.id);
-                              const canSelect = active || compareSelectedStoreIds.length < MAX_COMPARE_STORES;
                               return (
                                 <Pressable
                                   key={`compare-store-${s.id}`}
-                                  disabled={!canSelect}
                                   onPress={() => {
                                     setCompareSelectedStoreIds((prev) => {
                                       if (prev.includes(s.id)) return prev.filter((id) => id !== s.id);
-                                      if (prev.length >= MAX_COMPARE_STORES) return prev;
                                       return [...prev, s.id];
                                     });
                                   }}
@@ -1318,7 +1318,6 @@ export default function ShoppingListDetailsScreen() {
                                     borderWidth: 1,
                                     borderColor: active ? (c.tint ?? c.border) : c.border,
                                     backgroundColor: active ? (c.tint ?? c.border) : 'transparent',
-                                    opacity: canSelect ? 1 : 0.5,
                                   }}
                                 >
                                   <HStack justifyContent="space-between" alignItems="center">
@@ -1487,8 +1486,13 @@ export default function ShoppingListDetailsScreen() {
                           </Text>
                         </Pressable>
                       </HStack>
-                      {compareItemRows.length > 0 && compareSelectedStoreIds.length > 0 ? (
+                      {compareItemRows.length > 0 && matrixVisibleStoreIds.length > 0 ? (
                         <VStack style={{ marginTop: spacing.sm }}>
+                            {compareSelectedStoreIds.length > MAX_MATRIX_STORES && (
+                              <Text mb={spacing.xs} fontSize={12} style={{ color: c.textMuted }}>
+                                Viser de to første valgte butikkene i tabellen. Fjern eller bytt valg for å se andre.
+                              </Text>
+                            )}
                             <HStack
                               style={{
                                 borderBottomWidth: hairlineWidth,
@@ -1501,7 +1505,7 @@ export default function ShoppingListDetailsScreen() {
                                   Produkt
                                 </Text>
                               </Box>
-                              {compareSelectedStoreIds.map((storeId) => {
+                              {matrixVisibleStoreIds.map((storeId) => {
                                 const store = comparisonStoresById[storeId];
                                 const chainShort = (store?.chain ?? 'Butikk').trim();
                                 const nameShort = (store?.name ?? '').trim();
@@ -1551,7 +1555,7 @@ export default function ShoppingListDetailsScreen() {
                           </VStack>
                       ) : (
                         <Text mt={spacing.sm} fontSize={12} style={{ color: c.textMuted }}>
-                          Velg minst én butikk for å sammenligne varer.
+                          Velg minst én butikk for å sammenligne varer. Tabellen viser opptil to butikker om gangen.
                         </Text>
                       )}
                     </Box>
@@ -1653,7 +1657,7 @@ export default function ShoppingListDetailsScreen() {
                   Hvordan sammenligningen fungerer
                 </Text>
                 <Text fontSize={13} style={{ color: c.textMuted }}>
-                  Du kan maksimalt sammenligne to butikker om gangen.
+                  Du kan velge flere butikker samtidig for rangering og graf.
                   Vi sammenligner kun varer som begge valgte butikker har registrert pris på.
                   Hvis en vare mangler pris i en butikk, tas den ut av sammenligningen for begge.
                 </Text>
@@ -1744,8 +1748,8 @@ export default function ShoppingListDetailsScreen() {
                   Prismatrise
                 </Text>
                 <Text fontSize={13} style={{ color: c.textMuted }}>
-                  Du kan maksimalt sammenligne to butikker om gangen i stående format.
-                  Tabellen viser én kolonne per valgt butikk.
+                  Tabellen viser maks to butikker om gangen i stående format.
+                  Hvis du har valgt flere butikker, vises de to første i tabellen.
                 </Text>
                 <PremiumButton
                   title="Skjønner"

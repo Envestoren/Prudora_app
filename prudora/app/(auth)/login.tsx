@@ -31,56 +31,20 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const router = useRouter();
-  const { signIn, resetPasswordForEmail } = useAuth();
+  const { signIn } = useAuth();
   const c = useDesignColors();
   const isDark = c.background === '#000000';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
 
   const emailOk = email.trim().length > 0 && isEmailFormat(email);
   const showEmailError = emailTouched && email.trim().length > 0 && !emailOk;
 
-  const handleForgotPassword = async () => {
-    if (!emailOk) {
-      toast.show({
-        placement: 'bottom',
-        render: ({ id }) => (
-          <Toast nativeID={`toast-${id}`} action="error" variant="solid">
-            <ToastTitle>Skriv inn e-postadressen din</ToastTitle>
-            <ToastDescription>Fyll inn e-postadressen over først.</ToastDescription>
-          </Toast>
-        ),
-      });
-      return;
-    }
-    setResetting(true);
-    const { error } = await resetPasswordForEmail(email.trim());
-    setResetting(false);
-    if (error) {
-      toast.show({
-        placement: 'bottom',
-        render: ({ id }) => (
-          <Toast nativeID={`toast-${id}`} action="error" variant="solid">
-            <ToastTitle>Kunne ikke sende e-post</ToastTitle>
-            <ToastDescription>{error.message}</ToastDescription>
-          </Toast>
-        ),
-      });
-      return;
-    }
-    toast.show({
-      placement: 'bottom',
-      render: ({ id }) => (
-        <Toast nativeID={`toast-${id}`} action="success" variant="solid">
-          <ToastTitle>E-post sendt</ToastTitle>
-          <ToastDescription>Sjekk innboksen din for en lenke til å lage nytt passord.</ToastDescription>
-        </Toast>
-      ),
-    });
+  const handleForgotPassword = () => {
+    router.push('/(auth)/forgot-password');
   };
 
   const handleLogin = async () => {
@@ -235,9 +199,9 @@ export default function LoginScreen() {
                       />
                     </Input>
                     <Box mt={4}>
-                      <Pressable onPress={handleForgotPassword} disabled={resetting}>
+                      <Pressable onPress={handleForgotPassword}>
                         <Text fontSize={13} style={{ color: c.primary, fontWeight: '600' }}>
-                          {resetting ? 'Sender…' : 'Glemt passord?'}
+                          Glemt passord?
                         </Text>
                       </Pressable>
                     </Box>

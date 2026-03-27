@@ -26,11 +26,26 @@ const MAPPING = {
   'list.bullet': 'list',
   'map.fill': 'map',
   'cart.fill': 'shopping-cart',
+  'bell.fill': 'notifications',
   'chart.bar.fill': 'bar-chart',
   /** Pris-scan-fane */
   'barcode.viewfinder': 'qr-code-scanner',
+  /** Innstillinger / tema */
+  iphone: 'smartphone',
+  'sun.max.fill': 'wb-sunny',
+  'moon.fill': 'dark-mode',
   'heart': 'favorite-border',
   'heart.fill': 'favorite',
+  'wrench.and.screwdriver': 'build',
+  'location.fill': 'location-on',
+  'camera.fill': 'camera-alt',
+  'iphone.radiowaves.left.and.right': 'vibration',
+  'checkmark.circle.fill': 'check-circle',
+  'xmark.circle.fill': 'cancel',
+  'server.rack': 'dns',
+  'wifi': 'wifi',
+  'info.circle.fill': 'info',
+  'antenna.radiowaves.left.and.right': 'cell-tower',
 } as IconMapping;
 
 /**

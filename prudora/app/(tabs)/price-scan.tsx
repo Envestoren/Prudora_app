@@ -11,7 +11,7 @@ import {
   Spinner,
   Switch,
 } from '@gluestack-ui/themed';
-import { ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -30,7 +30,7 @@ import type { Product, ProductCategory } from '@/types/database';
 export default function PriceScanScreen() {
   const insets = useSafeAreaInsets();
   const c = useDesignColors();
-  const { profile, user, isLoading, refreshProfile } = useAuth();
+  const { profile, user, isLoading, refreshProfile, appMode } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,6 +144,8 @@ export default function PriceScanScreen() {
   );
 
   function VerifiedPriceScan() {
+    const MAX_STORE_CONFIRM_DISTANCE_KM = 0.1; // 100 meters
+    const adminBypassDistanceCheck = !!profile?.is_admin && appMode === 'admin';
     const [permission, requestPermission] = useCameraPermissions();
     const [scannerOpen, setScannerOpen] = useState(false);
 
@@ -177,6 +179,17 @@ export default function PriceScanScreen() {
       return stores.find((s) => s.id === selectedStoreId) ?? null;
     }, [stores, selectedStoreId]);
 
+    const selectedStoreDistanceKm = useMemo(() => {
+      if (!selectedStore || !userLocation) return null;
+      return distanceKm(userLocation.latitude, userLocation.longitude, selectedStore.latitude, selectedStore.longitude);
+    }, [selectedStore, userLocation]);
+
+    const selectedStoreWithinConfirmRadius = useMemo(() => {
+      if (adminBypassDistanceCheck) return true;
+      if (selectedStoreDistanceKm == null) return false;
+      return selectedStoreDistanceKm <= MAX_STORE_CONFIRM_DISTANCE_KM;
+    }, [MAX_STORE_CONFIRM_DISTANCE_KM, adminBypassDistanceCheck, selectedStoreDistanceKm]);
+
     const storeConfirmed = storeConfirmedAt != null && Date.now() - storeConfirmedAt < ONE_HOUR_MS;
 
     useEffect(() => {
@@ -199,6 +212,20 @@ export default function PriceScanScreen() {
         return da - db;
       });
     }, [stores, userLocation]);
+
+    const nearestStores = useMemo(() => storesSorted.slice(0, 3), [storesSorted]);
+
+    const storesWithinConfirmRadius = useMemo(() => {
+      if (adminBypassDistanceCheck) return storesSorted;
+      if (!userLocation) return [];
+      return storesSorted.filter(
+        (store) =>
+          distanceKm(userLocation.latitude, userLocation.longitude, store.latitude, store.longitude) <=
+          MAX_STORE_CONFIRM_DISTANCE_KM
+      );
+    }, [MAX_STORE_CONFIRM_DISTANCE_KM, adminBypassDistanceCheck, storesSorted, userLocation]);
+
+    const hasAnyStoreWithinConfirmRadius = storesWithinConfirmRadius.length > 0;
 
     const [categories, setCategories] = useState<ProductCategory[]>([]);
     const [categoriesLoading, setCategoriesLoading] = useState(false);
@@ -326,19 +353,51 @@ export default function PriceScanScreen() {
         setScanError('Velg en butikk først.');
         return;
       }
+      if (!adminBypassDistanceCheck && !userLocation) {
+        setScanError('Lokasjon er nødvendig for å bekrefte butikk innen 100 meter.');
+        return;
+      }
+      if (!adminBypassDistanceCheck && !selectedStoreWithinConfirmRadius) {
+        setScanError('Du må være innen 100 meter fra valgt butikk for å bekrefte.');
+        return;
+      }
       setScanError(null);
       try {
         await saveStoreConfirmation(selectedStoreId);
       } catch {
         setScanError('Kunne ikke bekrefte butikk. Prøv igjen.');
       }
-    }, [saveStoreConfirmation, selectedStoreId]);
+    }, [adminBypassDistanceCheck, saveStoreConfirmation, selectedStoreId, selectedStoreWithinConfirmRadius, userLocation]);
 
-    const handleSelectStore = useCallback((storeId: string) => {
-      setSelectedStoreId(storeId);
-      setStoreConfirmedAt(null); // må bekreftes på nytt
-      setScanError(null);
-    }, []);
+    const handleSelectStore = useCallback(
+      (storeId: string) => {
+        if (!storeId || storeId === selectedStoreId) return;
+
+        const nextStore = stores.find((s) => s.id === storeId);
+        const nextStoreLabel = nextStore
+          ? nextStore.name
+            ? `${nextStore.chain} – ${nextStore.name}`
+            : nextStore.chain
+          : 'valgt butikk';
+
+        Alert.alert(
+          'Bytte butikk?',
+          `Er du sikker på at du er i ${nextStoreLabel}? Du må bekrefte butikken på nytt.`,
+          [
+            { text: 'Avbryt', style: 'cancel' },
+            {
+              text: 'Ja, bytt butikk',
+              onPress: () => {
+                setSelectedStoreId(storeId);
+                setStoreConfirmedAt(null); // må bekreftes på nytt
+                setScanError(null);
+              },
+            },
+          ]
+        );
+      },
+      [selectedStoreId, stores]
+    );
 
     const resolveGpsLocation = useCallback(async () => {
       try {
@@ -354,33 +413,46 @@ export default function PriceScanScreen() {
 
     const pickSuggestedStoreFromLocation = useCallback(
       (loc: { latitude: number; longitude: number } | null, allStores: typeof stores) => {
-        if (!loc || allStores.length === 0) return allStores[0] ?? null;
+        if (adminBypassDistanceCheck) return allStores[0] ?? null;
+        if (!loc || allStores.length === 0) return null;
         const sorted = [...allStores].sort((a, b) => {
           const da = distanceKm(loc.latitude, loc.longitude, a.latitude, a.longitude);
           const db = distanceKm(loc.latitude, loc.longitude, b.latitude, b.longitude);
           return da - db;
         });
-        return sorted[0] ?? null;
+        const nearest = sorted[0] ?? null;
+        if (!nearest) return null;
+        const nearestDistance = distanceKm(loc.latitude, loc.longitude, nearest.latitude, nearest.longitude);
+        return nearestDistance <= MAX_STORE_CONFIRM_DISTANCE_KM ? nearest : null;
       },
-      []
+      [adminBypassDistanceCheck]
     );
 
     useEffect(() => {
       let cancelled = false;
       (async () => {
         const allStores = await loadStores();
-        const saved = await loadSavedStoreConfirmation();
-        if (cancelled) return;
-
-        if (saved?.storeId) {
-          setSelectedStoreId(saved.storeId);
-          setStoreConfirmedAt(saved.confirmedAt);
-          return;
-        }
-
         const loc = await resolveGpsLocation();
         if (cancelled) return;
         setUserLocation(loc);
+
+        const saved = await loadSavedStoreConfirmation();
+        if (cancelled) return;
+        if (saved?.storeId) {
+          const savedStore = allStores.find((s) => s.id === saved.storeId);
+          const isSavedStoreWithinRadius =
+            adminBypassDistanceCheck ||
+            (!!loc &&
+            !!savedStore &&
+            distanceKm(loc.latitude, loc.longitude, savedStore.latitude, savedStore.longitude) <=
+              MAX_STORE_CONFIRM_DISTANCE_KM);
+
+          if (isSavedStoreWithinRadius) {
+            setSelectedStoreId(saved.storeId);
+            setStoreConfirmedAt(saved.confirmedAt);
+            return;
+          }
+        }
 
         const suggested = pickSuggestedStoreFromLocation(loc, allStores);
         if (cancelled) return;
@@ -390,12 +462,24 @@ export default function PriceScanScreen() {
       return () => {
         cancelled = true;
       };
-    }, [loadSavedStoreConfirmation, loadStores, pickSuggestedStoreFromLocation, resolveGpsLocation]);
+    }, [adminBypassDistanceCheck, loadSavedStoreConfirmation, loadStores, pickSuggestedStoreFromLocation, resolveGpsLocation]);
 
     const openScanner = useCallback(async () => {
       setScanError(null);
+      if (!adminBypassDistanceCheck && !userLocation) {
+        setScanError('Lokasjon må være aktiv for å bruke scanneren.');
+        return;
+      }
+      if (!adminBypassDistanceCheck && !hasAnyStoreWithinConfirmRadius) {
+        setScanError('Ingen butikk er innen 100 meter. Scanner kan ikke brukes her.');
+        return;
+      }
       if (!selectedStoreId || !storeConfirmed) {
         setScanError('Velg og bekreft butikk først.');
+        return;
+      }
+      if (!adminBypassDistanceCheck && !selectedStoreWithinConfirmRadius) {
+        setScanError('Valgt butikk er ikke innen 100 meter.');
         return;
       }
       if (!permission) return;
@@ -408,7 +492,17 @@ export default function PriceScanScreen() {
       }
       resetState();
       setScannerOpen(true);
-    }, [permission, requestPermission, resetState, selectedStoreId, storeConfirmed]);
+    }, [
+      adminBypassDistanceCheck,
+      hasAnyStoreWithinConfirmRadius,
+      permission,
+      requestPermission,
+      resetState,
+      selectedStoreId,
+      selectedStoreWithinConfirmRadius,
+      storeConfirmed,
+      userLocation,
+    ]);
 
     const lookupBarcode = useCallback(
       async (code: string) => {
@@ -644,8 +738,13 @@ export default function PriceScanScreen() {
                     <Text fontSize={12} style={{ color: c.textMuted }}>
                       Butikk
                     </Text>
+                    {adminBypassDistanceCheck && (
+                      <Text fontSize={12} style={{ color: c.textMuted }}>
+                        Adminmodus: avstandskrav (100 m) er deaktivert.
+                      </Text>
+                    )}
 
-                    {!selectedStore ? (
+                    {storesLoading ? (
                       <HStack space="sm" alignItems="center">
                         <Spinner size="small" />
                         <Text fontSize={13} style={{ color: c.textMuted }}>
@@ -654,89 +753,172 @@ export default function PriceScanScreen() {
                       </HStack>
                     ) : (
                       <>
-                        <Text fontSize={16} fontWeight="800" style={{ color: c.text }}>
-                          {selectedStore.name ? `${selectedStore.chain} – ${selectedStore.name}` : selectedStore.chain}
-                        </Text>
-
-                        {userLocation && (
-                          <Text fontSize={13} style={{ color: c.tint }}>
-                            {formatDistance(distanceKm(userLocation.latitude, userLocation.longitude, selectedStore.latitude, selectedStore.longitude))}
-                          </Text>
-                        )}
-
-                        <Text fontSize={13} style={{ color: c.textMuted }}>
-                          {selectedStore.address}
-                        </Text>
-
-                        {!storeConfirmed ? (
+                        {!selectedStore ? (
                           <>
-                            <Text fontSize={12} style={{ color: c.textMuted }}>
-                              Bekreft at dette er butikken du handler i.
+                            <Text fontSize={12} style={{ color: c.error ?? '#ff4d4f' }}>
+                              Alle registrerte butikker er for langt unna (over 100 meter).
                             </Text>
-
-                            <ScrollView
-                              nestedScrollEnabled
-                              style={{ maxHeight: 200 }}
-                              showsVerticalScrollIndicator={false}
-                            >
-                              <VStack space="sm">
-                                {storesSorted.map((s) => {
-                                  const active = s.id === selectedStoreId;
+                            {nearestStores.length > 0 && (
+                              <VStack space="sm" mt={spacing.xs}>
+                                <Text fontSize={12} style={{ color: c.textMuted }}>
+                                  Nærmeste butikker:
+                                </Text>
+                                {nearestStores.map((s) => {
+                                  const storeDistance =
+                                    userLocation != null
+                                      ? distanceKm(userLocation.latitude, userLocation.longitude, s.latitude, s.longitude)
+                                      : null;
                                   return (
-                                    <Pressable
+                                    <Box
                                       key={s.id}
-                                      onPress={() => handleSelectStore(s.id)}
                                       style={{
                                         paddingVertical: spacing.xs,
                                         paddingHorizontal: spacing.sm,
                                         borderRadius: 12,
-                                        backgroundColor: active ? c.tint ?? c.border : c.surface,
+                                        backgroundColor: c.surface,
                                         borderWidth: 1,
-                                        borderColor: active ? c.primary : c.border,
+                                        borderColor: c.border,
                                       }}
                                     >
-                                      <Text
-                                        fontSize={13}
-                                        fontWeight="600"
-                                        style={{ color: active ? c.background : c.textSecondary }}
-                                      >
-                                        {s.name ? `${s.chain} – ${s.name}` : s.chain}
+                                      <Text fontSize={13} fontWeight="600" style={{ color: c.textSecondary }}>
+                                        {s.name ? `${s.chain} – ${s.name}` : s.chain}{' '}
+                                        {storeDistance != null ? `(${formatDistance(storeDistance)})` : ''}
                                       </Text>
-                                    </Pressable>
+                                    </Box>
                                   );
                                 })}
                               </VStack>
-                            </ScrollView>
-
-                            <PremiumButton
-                              title="Bekreft butikk"
-                              onPress={handleConfirmStore}
-                              disabled={!selectedStoreId || storesLoading}
-                              variant="outline"
-                            />
+                            )}
                           </>
                         ) : (
-                          <HStack justifyContent="space-between" alignItems="center" mt={spacing.xs}>
-                            <Pressable
-                              onPress={() => {
-                                setStoreConfirmedAt(null);
-                              }}
-                            >
-                              <Text fontSize={13} style={{ color: c.tint }}>
-                                Endre butikk
-                              </Text>
-                            </Pressable>
-                            <Text fontSize={12} style={{ color: c.textMuted }}>
-                              Bekreftet
+                          <>
+                            <Text fontSize={16} fontWeight="800" style={{ color: c.text }}>
+                              {selectedStore.name ? `${selectedStore.chain} – ${selectedStore.name}` : selectedStore.chain}
                             </Text>
-                          </HStack>
+
+                            {userLocation && (
+                              <Text fontSize={13} style={{ color: c.tint }}>
+                                {formatDistance(
+                                  distanceKm(
+                                    userLocation.latitude,
+                                    userLocation.longitude,
+                                    selectedStore.latitude,
+                                    selectedStore.longitude
+                                  )
+                                )}
+                              </Text>
+                            )}
+
+                            <Text fontSize={13} style={{ color: c.textMuted }}>
+                              {selectedStore.address}
+                            </Text>
+                          </>
                         )}
+
+                        {!!selectedStore &&
+                          (!storeConfirmed ? (
+                            <>
+                              <Text fontSize={12} style={{ color: c.textMuted }}>
+                                Bekreft at dette er butikken du handler i.
+                              </Text>
+                              {!!userLocation && !hasAnyStoreWithinConfirmRadius && !adminBypassDistanceCheck && (
+                                <Text fontSize={12} style={{ color: c.error ?? '#ff4d4f' }}>
+                                  Ingen butikk er innen 100 meter. Scanneren kan ikke brukes her.
+                                </Text>
+                              )}
+                              {!userLocation && !adminBypassDistanceCheck && (
+                                <Text fontSize={12} style={{ color: c.error ?? '#ff4d4f' }}>
+                                  Lokasjon må være aktiv for å bekrefte butikk innen 100 meter.
+                                </Text>
+                              )}
+                              {!!userLocation && selectedStore && !selectedStoreWithinConfirmRadius && !adminBypassDistanceCheck && (
+                                <Text fontSize={12} style={{ color: c.error ?? '#ff4d4f' }}>
+                                  Du er for langt unna valgt butikk. Gå nærmere (maks 100 meter).
+                                </Text>
+                              )}
+
+                              <ScrollView
+                                nestedScrollEnabled
+                                style={{ maxHeight: 200 }}
+                                showsVerticalScrollIndicator={false}
+                              >
+                                <VStack space="sm">
+                                  {nearestStores.map((s) => {
+                                    const active = s.id === selectedStoreId;
+                                    const storeDistance =
+                                      userLocation != null
+                                        ? distanceKm(userLocation.latitude, userLocation.longitude, s.latitude, s.longitude)
+                                        : null;
+                                    return (
+                                      <Pressable
+                                        key={s.id}
+                                        onPress={() => handleSelectStore(s.id)}
+                                        style={{
+                                          paddingVertical: spacing.xs,
+                                          paddingHorizontal: spacing.sm,
+                                          borderRadius: 12,
+                                          backgroundColor: active ? c.tint ?? c.border : c.surface,
+                                          borderWidth: 1,
+                                          borderColor: active ? c.primary : c.border,
+                                        }}
+                                      >
+                                        <Text
+                                          fontSize={13}
+                                          fontWeight="600"
+                                          style={{ color: active ? c.background : c.textSecondary }}
+                                        >
+                                          {s.name ? `${s.chain} – ${s.name}` : s.chain}{' '}
+                                          {storeDistance != null ? `(${formatDistance(storeDistance)})` : ''}
+                                        </Text>
+                                      </Pressable>
+                                    );
+                                  })}
+                                </VStack>
+                              </ScrollView>
+
+                              <PremiumButton
+                                title="Bekreft butikk"
+                                onPress={handleConfirmStore}
+                                disabled={
+                                  !selectedStoreId ||
+                                  storesLoading ||
+                                  (!adminBypassDistanceCheck && !userLocation) ||
+                                  (!adminBypassDistanceCheck && !hasAnyStoreWithinConfirmRadius) ||
+                                  (!adminBypassDistanceCheck && !selectedStoreWithinConfirmRadius)
+                                }
+                                variant="outline"
+                              />
+                            </>
+                          ) : (
+                            <HStack justifyContent="space-between" alignItems="center" mt={spacing.xs}>
+                              <Pressable
+                                onPress={() => {
+                                  setStoreConfirmedAt(null);
+                                }}
+                              >
+                                <Text fontSize={13} style={{ color: c.tint }}>
+                                  Endre butikk
+                                </Text>
+                              </Pressable>
+                              <Text fontSize={12} style={{ color: c.textMuted }}>
+                                Bekreftet
+                              </Text>
+                            </HStack>
+                          ))}
                       </>
                     )}
                   </VStack>
                 </Box>
 
-                <PremiumButton title="Scanner" onPress={openScanner} disabled={!storeConfirmed} />
+                <PremiumButton
+                  title="Scanner"
+                  onPress={openScanner}
+                  disabled={
+                    !storeConfirmed ||
+                    (!adminBypassDistanceCheck && !userLocation) ||
+                    (!adminBypassDistanceCheck && !hasAnyStoreWithinConfirmRadius)
+                  }
+                />
 
                 {scanError && (
                   <Text fontSize={14} style={{ color: c.error ?? '#ff4d4f' }}>

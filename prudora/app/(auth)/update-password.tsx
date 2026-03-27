@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import {
   Box,
@@ -22,12 +23,18 @@ import { spacing, radius, hairlineWidth } from '@/constants/design';
 function parseSessionFromUrl(url: string): { access_token: string; refresh_token: string } | null {
   try {
     const hashIndex = url.indexOf('#');
-    if (hashIndex === -1) return null;
-    const fragment = url.substring(hashIndex + 1);
-    const params = new URLSearchParams(fragment);
-    const access_token = params.get('access_token');
-    const refresh_token = params.get('refresh_token');
-    const type = params.get('type');
+    const queryIndex = url.indexOf('?');
+
+    const hashParams = hashIndex >= 0 ? new URLSearchParams(url.substring(hashIndex + 1)) : new URLSearchParams();
+    const queryParams =
+      queryIndex >= 0
+        ? new URLSearchParams(url.substring(queryIndex + 1, hashIndex >= 0 ? hashIndex : undefined))
+        : new URLSearchParams();
+
+    const access_token = hashParams.get('access_token') ?? queryParams.get('access_token');
+    const refresh_token = hashParams.get('refresh_token') ?? queryParams.get('refresh_token');
+    const type = hashParams.get('type') ?? queryParams.get('type');
+
     if (type === 'recovery' && access_token && refresh_token) {
       return { access_token, refresh_token };
     }
@@ -35,6 +42,32 @@ function parseSessionFromUrl(url: string): { access_token: string; refresh_token
     // ignore
   }
   return null;
+}
+
+function parseCodeFromUrl(url: string): string | null {
+  try {
+    const queryIndex = url.indexOf('?');
+    if (queryIndex === -1) return null;
+    const hashIndex = url.indexOf('#');
+    const query = url.substring(queryIndex + 1, hashIndex >= 0 ? hashIndex : undefined);
+    const params = new URLSearchParams(query);
+    return params.get('code');
+  } catch {
+    return null;
+  }
+}
+
+function parseTokenHashFromUrl(url: string): string | null {
+  try {
+    const queryIndex = url.indexOf('?');
+    if (queryIndex === -1) return null;
+    const hashIndex = url.indexOf('#');
+    const query = url.substring(queryIndex + 1, hashIndex >= 0 ? hashIndex : undefined);
+    const params = new URLSearchParams(query);
+    return params.get('token_hash');
+  } catch {
+    return null;
+  }
 }
 
 export default function UpdatePasswordScreen() {
@@ -46,23 +79,98 @@ export default function UpdatePasswordScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resolvingLink, setResolvingLink] = useState(true);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [focusedField, setFocusedField] = useState<'new' | 'confirm' | null>(null);
+  const [lastDeepLink, setLastDeepLink] = useState<string | null>(null);
 
   useEffect(() => {
-    const handleUrl = async (url: string | null) => {
-      if (!url) return;
-      const session = parseSessionFromUrl(url);
-      if (session) {
-        const { error } = await supabase.auth.setSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-        });
-        if (!error) setSessionReady(true);
-      }
+    const withTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+      return Promise.race([
+        promise,
+        new Promise<T>((_resolve, reject) =>
+          setTimeout(() => reject(new Error(`${label} tok for lang tid.`)), ms)
+        ),
+      ]);
     };
 
-    Linking.getInitialURL().then(handleUrl);
+    const handleUrl = async (url: string | null) => {
+      if (!url) {
+        setResolvingLink(false);
+        return;
+      }
+      setLastDeepLink(url);
+      setLinkError(null);
+      setResolvingLink(true);
+      const session = parseSessionFromUrl(url);
+      if (session) {
+        const { error } = await withTimeout(
+          supabase.auth.setSession({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+          }),
+          10000,
+          'Validering av recovery-lenke'
+        );
+        if (!error) {
+          setSessionReady(true);
+          setResolvingLink(false);
+          return;
+        }
+        setLinkError(error.message ?? 'Kunne ikke validere lenken.');
+        setResolvingLink(false);
+        return;
+      }
+
+      // Støtt også kode-baserte recovery-lenker (?code=...) som kommer fra Supabase.
+      const code = parseCodeFromUrl(url);
+      if (code) {
+        const { error } = await withTimeout(
+          supabase.auth.exchangeCodeForSession(code),
+          10000,
+          'Validering av recovery-kode'
+        );
+        if (!error) {
+          setSessionReady(true);
+          setResolvingLink(false);
+          return;
+        }
+        setLinkError(error.message ?? 'Kunne ikke validere lenken.');
+        setResolvingLink(false);
+        return;
+      }
+
+      const tokenHash = parseTokenHashFromUrl(url);
+      if (tokenHash) {
+        const { error } = await withTimeout(
+          supabase.auth.verifyOtp({
+            type: 'recovery',
+            token_hash: tokenHash,
+          }),
+          10000,
+          'Validering av recovery-token'
+        );
+        if (!error) {
+          setSessionReady(true);
+          setResolvingLink(false);
+          return;
+        }
+        setLinkError(error.message ?? 'Kunne ikke validere recovery-lenken.');
+        setResolvingLink(false);
+        return;
+      }
+
+      setLinkError('Lenken inneholder ikke gyldig recovery-informasjon.');
+      setResolvingLink(false);
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      // On web, Expo Linking may drop fragment/query tokens; read full href directly.
+      void handleUrl(window.location.href);
+    }
+
+    Linking.getInitialURL().then(handleUrl).finally(() => setResolvingLink(false));
     const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
     return () => sub.remove();
   }, []);
@@ -130,8 +238,42 @@ export default function UpdatePasswordScreen() {
             Velg nytt passord
           </Text>
           <Text fontSize={15} style={{ color: c.textSecondary }} mb={24} lineHeight={22}>
-            {sessionReady ? 'Skriv inn ditt nye passord nedenfor.' : 'Åpne lenken fra e-posten for å fortsette.'}
+            {sessionReady
+              ? 'Skriv inn ditt nye passord nedenfor.'
+              : resolvingLink
+                ? 'Validerer lenke...'
+                : 'Åpne lenken fra e-posten for å fortsette.'}
           </Text>
+
+          {!sessionReady && linkError && (
+            <VStack space="sm" mb={16}>
+              <Text fontSize={12} style={{ color: '#EF4444' }}>
+                {linkError}
+              </Text>
+              <PremiumButton
+                title="Prøv igjen"
+                variant="outline"
+                onPress={async () => {
+                  setResolvingLink(true);
+                  setLinkError(null);
+                  const url = await Linking.getInitialURL();
+                  setLastDeepLink(url);
+                  setResolvingLink(false);
+                  if (!url) {
+                    setLinkError('Fant ingen recovery-lenke. Åpne lenken fra e-posten på nytt.');
+                  } else {
+                    // Trigger URL-handler på nytt ved å åpne samme lenke internt.
+                    await Linking.openURL(url);
+                  }
+                }}
+              />
+              {lastDeepLink && (
+                <Text fontSize={11} style={{ color: c.textMuted }}>
+                  Mottatt lenke: {lastDeepLink.slice(0, 120)}...
+                </Text>
+              )}
+            </VStack>
+          )}
 
           {sessionReady && (
             <VStack space="md">

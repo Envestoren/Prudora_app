@@ -1,8 +1,11 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
-import { createClient } from '@supabase/supabase-js';
+import Constants from 'expo-constants';
+import { Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import type { Profile } from '@/types/database';
+import { registerForExpoPushTokenAsync } from '@/lib/push-notifications';
 
 type AuthState = {
   session: Session | null;
@@ -21,9 +24,13 @@ type AuthContextValue = AuthState & {
   refreshProfile: () => Promise<void>;
   refreshSession: () => Promise<boolean>;
   updateProfile: (params: { first_name: string; last_name: string; age: number }) => Promise<{ error: Error | null }>;
+  deleteAccount: () => Promise<{ error: Error | null }>;
+  appMode: 'user' | 'admin';
+  setAppMode: (mode: 'user' | 'admin') => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const APP_MODE_STORAGE_KEY = 'prudora_app_mode';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -33,6 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading: true,
     isConfirmed: false,
   });
+  const [appMode, setAppModeState] = useState<'user' | 'admin'>('user');
+  const lastSeenAlertEventIdRef = useRef<string | null>(null);
 
   const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     const { data, error } = await supabase
@@ -87,13 +96,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return false;
       }
-      if (data.session) {
-        const profile = await fetchProfile(data.session.user.id);
-        const confirmed = data.session.user.email_confirmed_at != null;
+      const nextSession = data.session;
+      if (nextSession) {
+        const profile = await fetchProfile(nextSession.user.id);
+        const confirmed = nextSession.user.email_confirmed_at != null;
         setState((s) => ({
           ...s,
-          session: data.session,
-          user: data.session.user,
+          session: nextSession,
+          user: nextSession.user,
           profile,
           isConfirmed: confirmed,
         }));
@@ -118,6 +128,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
   }, [fetchProfile]);
+
+  const syncExpoPushToken = useCallback(async (userId: string) => {
+    try {
+      const token = await registerForExpoPushTokenAsync();
+      if (!token) return;
+      await supabase
+        .from('user_push_tokens')
+        .upsert(
+          {
+            user_id: userId,
+            expo_push_token: token,
+            platform: 'expo',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'expo_push_token' }
+        );
+    } catch {
+      // Ignore push registration errors; auth flow should not fail.
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,6 +222,123 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [fetchProfile, isInvalidRefreshTokenError]);
 
+  useEffect(() => {
+    if (!state.user?.id) return;
+    void syncExpoPushToken(state.user.id);
+  }, [state.user?.id, syncExpoPushToken]);
+
+  const sendLocalPriceAlertNotification = useCallback(async (title: string, body: string) => {
+    Alert.alert(title, body);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(APP_MODE_STORAGE_KEY);
+        if (cancelled) return;
+        if (saved === 'admin' || saved === 'user') {
+          setAppModeState(saved);
+        } else {
+          setAppModeState('user');
+        }
+      } catch {
+        if (!cancelled) setAppModeState('user');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!state.profile?.is_admin && appMode === 'admin') {
+      setAppModeState('user');
+      void AsyncStorage.setItem(APP_MODE_STORAGE_KEY, 'user');
+    }
+  }, [state.profile?.is_admin, appMode]);
+
+  // Expo Go fallback: vis lokalt varsel ved nye prisvarsel-events.
+  useEffect(() => {
+    const userId = state.user?.id;
+    if (!userId) return;
+    const isExpoGo =
+      Constants.appOwnership === 'expo' ||
+      Constants.executionEnvironment === 'storeClient';
+    if (!isExpoGo) return;
+
+    let cancelled = false;
+    const run = async () => {
+      const { data, error } = await supabase
+        .from('user_price_alert_events')
+        .select('id, product_id, store_id, product_price_id, sent_at')
+        .eq('user_id', userId)
+        .order('sent_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled || error || !data?.id) return;
+
+      const eventId = data.id as string;
+      if (!lastSeenAlertEventIdRef.current) {
+        lastSeenAlertEventIdRef.current = eventId;
+        return;
+      }
+      if (lastSeenAlertEventIdRef.current === eventId) return;
+      lastSeenAlertEventIdRef.current = eventId;
+
+      const [{ data: productData }, { data: storeData }, { data: newPriceData }] = await Promise.all([
+        supabase.from('products').select('name').eq('id', data.product_id).maybeSingle(),
+        supabase.from('stores').select('chain, name').eq('id', data.store_id).maybeSingle(),
+        supabase
+          .from('product_prices')
+          .select('id, product_id, store_id, price_amount, recorded_at')
+          .eq('id', data.product_price_id)
+          .maybeSingle(),
+      ]);
+
+      if (cancelled || !newPriceData) return;
+
+      const { data: prevPriceData } = await supabase
+        .from('product_prices')
+        .select('price_amount, recorded_at')
+        .eq('product_id', newPriceData.product_id)
+        .eq('store_id', newPriceData.store_id)
+        .lt('recorded_at', newPriceData.recorded_at)
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const newPrice = Number((newPriceData as any).price_amount);
+      const oldPrice = Number((prevPriceData as any)?.price_amount);
+      const hasOld = Number.isFinite(oldPrice);
+      const deltaPct = hasOld && oldPrice > 0 ? ((newPrice - oldPrice) / oldPrice) * 100 : null;
+
+      const productName = (productData as any)?.name ?? 'Produkt';
+      const storeLabel = (storeData as any)?.name
+        ? `${(storeData as any).chain} - ${(storeData as any).name}`
+        : ((storeData as any)?.chain ?? 'Butikk');
+      const summary = hasOld
+        ? `${oldPrice.toFixed(2)} kr -> ${newPrice.toFixed(2)} kr (${deltaPct != null ? `${deltaPct.toFixed(1)}%` : ''})`
+        : `${newPrice.toFixed(2)} kr`;
+
+      await sendLocalPriceAlertNotification(
+        'Prudora Prisvarsel',
+        `${productName}\n${storeLabel}\n${summary}`
+      );
+    };
+
+    void run();
+    const timer = setInterval(() => {
+      void run();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [sendLocalPriceAlertNotification, state.user?.id]);
+
   const signUp = useCallback(
     async (params: { email: string; password: string; firstName: string; lastName: string; age: number }) => {
       const { data, error } = await supabase.auth.signUp({
@@ -234,57 +381,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const changePassword = useCallback(
     async (params: { currentPassword: string; newPassword: string }) => {
       try {
-        const user = state.user ?? (await supabase.auth.getUser()).data.user;
-        const email = user?.email ?? null;
-        if (!user || !email) {
-          return { error: new Error('Kunne ikke finne brukerens e-post. Logg inn på nytt og prøv igjen.') };
+        const session = state.session ?? (await supabase.auth.getSession()).data.session;
+        if (!session?.access_token) {
+          return { error: new Error('Ikke innlogget. Logg inn på nytt og prøv igjen.') };
         }
 
-        // Verifiser nåværende passord "silent" uten å påvirke app-sesjonen.
-        // Vi bruker en midlertidig klient uten persist/refresh for å unngå auth-lock og reauth-epost.
+        // Kall Supabase Auth REST API direkte for å unngå at JS-klientens
+        // interne onAuthStateChange-listener blokkerer updateUser-promisen.
         const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
         const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-        if (!supabaseUrl || !supabaseAnonKey) {
-          return { error: new Error('Mangler Supabase-konfig (EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY).') };
-        }
 
-        const noopStorage = {
-          getItem: async () => null,
-          setItem: async () => {},
-          removeItem: async () => {},
-        };
-
-        const verifier = createClient(supabaseUrl, supabaseAnonKey, {
-          auth: {
-            storage: noopStorage,
-            persistSession: false,
-            autoRefreshToken: false,
-            detectSessionInUrl: false,
+        const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: supabaseAnonKey,
           },
+          body: JSON.stringify({ password: params.newPassword }),
         });
 
-        const { error: verifyError } = await verifier.auth.signInWithPassword({
-          email,
-          password: params.currentPassword,
-        });
-
-        if (verifyError) {
-          const msg = verifyError.message?.toLowerCase?.() ?? '';
-          const status = (verifyError as unknown as { status?: number }).status;
-          if (status === 400 && (msg.includes('invalid login') || msg.includes('invalid credentials'))) {
-            return { error: new Error('Nåværende passord er feil.') };
-          }
-          return { error: verifyError };
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const msg = (body as any)?.msg ?? (body as any)?.message ?? (body as any)?.error_description ?? 'Kunne ikke oppdatere passord.';
+          return { error: new Error(msg) };
         }
 
-        const { error: updateError } = await supabase.auth.updateUser({ password: params.newPassword });
-        return { error: updateError ?? null };
+        return { error: null };
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Ukjent feil';
         return { error: new Error(msg) };
       }
     },
-    [state.user]
+    [state.session]
   );
 
   const updateProfile = useCallback(
@@ -306,6 +435,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [state.user, refreshProfile]
   );
 
+  const deleteAccount = useCallback(async () => {
+    try {
+      const { error } = await supabase.rpc('delete_my_account_preserve_prices');
+      if (error) return { error };
+      await supabase.auth.signOut();
+      return { error: null };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Ukjent feil ved sletting av konto.';
+      return { error: new Error(msg) };
+    }
+  }, []);
+
+  const setAppMode = useCallback(async (mode: 'user' | 'admin') => {
+    setAppModeState(mode);
+    try {
+      await AsyncStorage.setItem(APP_MODE_STORAGE_KEY, mode);
+    } catch {
+      // ignore local persistence errors
+    }
+  }, []);
+
   const value: AuthContextValue = {
     ...state,
     signUp,
@@ -316,6 +466,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshProfile,
     refreshSession,
     updateProfile,
+    deleteAccount,
+    appMode,
+    setAppMode,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

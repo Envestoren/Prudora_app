@@ -72,3 +72,15 @@ export type ProductPrice = {
   approved_by: string | null;
   approved_at: string | null;
 };
+
+export type UserProductPriceAlert = {
+  id: string;
+  user_id: string;
+  product_id: string;
+  enabled: boolean;
+  percent_drop: number | null;
+  absolute_drop_kr: number | null;
+  threshold_price: number | null;
+  created_at: string;
+  updated_at: string;
+};

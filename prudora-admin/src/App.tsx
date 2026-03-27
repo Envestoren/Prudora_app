@@ -6,15 +6,14 @@ import { Dashboard } from './pages/Dashboard'
 import { Stores } from './pages/Stores'
 import { Products } from './pages/Products'
 import { ProductApprovals } from './pages/ProductApprovals'
-import { PriceSettings } from './pages/PriceSettings'
-import { PriceApprovals } from './pages/PriceApprovals'
+import { StorePrices } from './pages/StorePrices'
 import { AdminLayout } from './components/AdminLayout'
 
 export default function App() {
   const [adminProfile, setAdminProfile] = useState<Profile | null>(null)
   const [checking, setChecking] = useState(true)
   const [activeTab, setActiveTab] = useState<
-    'users' | 'stores' | 'products' | 'approvals' | 'price-settings' | 'price-approvals'
+    'users' | 'stores' | 'products' | 'approvals' | 'store-prices'
   >('users')
 
   const onLogout = useCallback(async () => {
@@ -107,10 +106,8 @@ export default function App() {
           <Stores />
         ) : activeTab === 'approvals' ? (
           <ProductApprovals />
-        ) : activeTab === 'price-settings' ? (
-          <PriceSettings />
-        ) : activeTab === 'price-approvals' ? (
-          <PriceApprovals />
+        ) : activeTab === 'store-prices' ? (
+          <StorePrices />
         ) : (
           <Products />
         )}
