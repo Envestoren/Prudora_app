@@ -11,7 +11,7 @@ import {
   Spinner,
   Switch,
 } from '@gluestack-ui/themed';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 
 import { BlurStatusBarView } from '@/components/BlurStatusBarView';
 import { PremiumButton } from '@/components/ui/PremiumButton';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 import { hairlineWidth, radius, spacing } from '@/constants/design';
 import { useDesignColors } from '@/hooks/use-design-colors';
 import { useAuth } from '@/lib/auth-context';
@@ -143,6 +144,21 @@ export default function PriceScanScreen() {
     </BlurStatusBarView>
   );
 
+  function formatFixed2(n: number): string {
+    const rounded = Math.round(n * 100);
+    const intPart = Math.floor(Math.abs(rounded) / 100);
+    const fracPart = String(Math.abs(rounded) % 100).padStart(2, '0');
+    return `${n < 0 ? '-' : ''}${intPart},${fracPart}`;
+  }
+
+  function formatDateShort(iso: string): string {
+    const d = new Date(iso);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}.${month}.${year}`;
+  }
+
   function VerifiedPriceScan() {
     const MAX_STORE_CONFIRM_DISTANCE_KM = 0.1; // 100 meters
     const adminBypassDistanceCheck = !!profile?.is_admin && appMode === 'admin';
@@ -248,6 +264,9 @@ export default function PriceScanScreen() {
     const [priceDraft, setPriceDraft] = useState(''); // kr per products.unit
     const [priceSubmitting, setPriceSubmitting] = useState(false);
     const [priceConfirmationMessage, setPriceConfirmationMessage] = useState<string | null>(null);
+    const [lastStorePrice, setLastStorePrice] = useState<{ price: number; recorded_at: string } | null>(null);
+    const [lastStorePriceLoading, setLastStorePriceLoading] = useState(false);
+    const [switchStoreDialog, setSwitchStoreDialog] = useState<{ storeId: string; label: string } | null>(null);
 
     const baseInputStyle = useMemo(
       () => ({
@@ -258,6 +277,33 @@ export default function PriceScanScreen() {
       }),
       [c]
     );
+
+    useEffect(() => {
+      if (!foundProduct || !selectedStoreId) {
+        setLastStorePrice(null);
+        return;
+      }
+      let cancelled = false;
+      setLastStorePriceLoading(true);
+      setLastStorePrice(null);
+      (async () => {
+        const { data } = await supabase
+          .from('product_prices')
+          .select('price_amount, recorded_at')
+          .eq('product_id', foundProduct.id)
+          .eq('store_id', selectedStoreId)
+          .eq('approval_status', 'approved')
+          .order('recorded_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (cancelled) return;
+        setLastStorePrice(
+          data ? { price: Number(data.price_amount), recorded_at: data.recorded_at as string } : null
+        );
+        setLastStorePriceLoading(false);
+      })();
+      return () => { cancelled = true; };
+    }, [foundProduct, selectedStoreId]);
 
     useEffect(() => {
       let cancelled = false;
@@ -291,6 +337,8 @@ export default function PriceScanScreen() {
       setThankYouMessage(null);
       setPriceDraft('');
       setPriceConfirmationMessage(null);
+      setLastStorePrice(null);
+      setLastStorePriceLoading(false);
       setCreating(false);
       setNewProduct({
         name: '',
@@ -380,21 +428,7 @@ export default function PriceScanScreen() {
             : nextStore.chain
           : 'valgt butikk';
 
-        Alert.alert(
-          'Bytte butikk?',
-          `Er du sikker på at du er i ${nextStoreLabel}? Du må bekrefte butikken på nytt.`,
-          [
-            { text: 'Avbryt', style: 'cancel' },
-            {
-              text: 'Ja, bytt butikk',
-              onPress: () => {
-                setSelectedStoreId(storeId);
-                setStoreConfirmedAt(null); // må bekreftes på nytt
-                setScanError(null);
-              },
-            },
-          ]
-        );
+        setSwitchStoreDialog({ storeId, label: nextStoreLabel });
       },
       [selectedStoreId, stores]
     );
@@ -1009,9 +1043,26 @@ export default function PriceScanScreen() {
                     <Text fontSize={13} style={{ color: c.textMuted }}>
                       {foundProduct.manufacturer || foundProduct.supplier}
                     </Text>
-                    <Text fontSize={13} fontWeight="600" style={{ color: c.textSecondary }}>
-                      {Number(foundProduct.unit_price_amount).toFixed(2)} kr / {foundProduct.unit}
-                    </Text>
+
+                    {lastStorePriceLoading ? (
+                      <HStack space="xs" alignItems="center">
+                        <Spinner size="small" />
+                        <Text fontSize={12} style={{ color: c.textMuted }}>Henter siste pris…</Text>
+                      </HStack>
+                    ) : lastStorePrice ? (
+                      <HStack space="xs" alignItems="center">
+                        <Text fontSize={13} fontWeight="700" style={{ color: c.textSecondary }}>
+                          Siste pris: {formatFixed2(lastStorePrice.price)} kr
+                        </Text>
+                        <Text fontSize={12} style={{ color: c.textMuted }}>
+                          ({formatDateShort(lastStorePrice.recorded_at)})
+                        </Text>
+                      </HStack>
+                    ) : (
+                      <Text fontSize={12} style={{ color: c.textMuted }}>
+                        Ingen registrert pris i denne butikken ennå
+                      </Text>
+                    )}
 
                     <Text fontSize={13} fontWeight="700" style={{ color: c.textSecondary, marginTop: spacing.xs }}>
                       Registrer pris
@@ -1211,6 +1262,72 @@ export default function PriceScanScreen() {
             </Box>
           )}
         </Box>
+
+        {switchStoreDialog && (
+          <Pressable
+            onPress={() => setSwitchStoreDialog(null)}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+              justifyContent: 'center',
+              alignItems: 'center',
+              paddingHorizontal: spacing.lg,
+            }}
+          >
+            <Pressable
+              onPress={() => {}}
+              style={{
+                width: '100%',
+                maxWidth: 420,
+                borderRadius: radius.xl,
+                backgroundColor: c.surface,
+                borderWidth: hairlineWidth,
+                borderColor: c.border,
+                padding: spacing.md,
+              }}
+            >
+              <VStack space="sm">
+                <HStack alignItems="center" space="sm">
+                  <IconSymbol name="storefront.fill" size={20} color={c.textSecondary} />
+                  <Text fontSize={16} fontWeight="700" style={{ color: c.text }}>
+                    Bytte butikk?
+                  </Text>
+                </HStack>
+                <Text fontSize={14} style={{ color: c.textMuted }} lineHeight={20}>
+                  Er du sikker på at du er i{' '}
+                  <Text fontSize={14} fontWeight="700" style={{ color: c.text }}>
+                    {switchStoreDialog.label}
+                  </Text>
+                  ? Du må bekrefte butikken på nytt.
+                </Text>
+                <HStack space="sm" mt={spacing.xs}>
+                  <PremiumButton
+                    title="Avbryt"
+                    variant="outline"
+                    onPress={() => setSwitchStoreDialog(null)}
+                    style={{ flex: 1, minHeight: 44 }}
+                    textStyle={{ fontSize: 14 }}
+                  />
+                  <PremiumButton
+                    title="Ja, bytt butikk"
+                    onPress={() => {
+                      setSelectedStoreId(switchStoreDialog.storeId);
+                      setStoreConfirmedAt(null);
+                      setScanError(null);
+                      setSwitchStoreDialog(null);
+                    }}
+                    style={{ flex: 1, minHeight: 44 }}
+                    textStyle={{ fontSize: 14 }}
+                  />
+                </HStack>
+              </VStack>
+            </Pressable>
+          </Pressable>
+        )}
       </BlurStatusBarView>
     );
 

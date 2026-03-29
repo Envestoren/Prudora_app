@@ -129,13 +129,13 @@ begin
 
     v_title := format('%s: prisnedgang', v_price.product_name);
     v_body := format(
-      '%s | %s: %.2f kr -> %.2f kr (%s%.1f%%)',
+      '%s | %s: %s kr -> %s kr (%s%s%%)',
       v_price.store_label,
       v_price.product_name,
-      v_prev_price,
-      v_price.price_amount,
+      round(v_prev_price, 2),
+      round(v_price.price_amount, 2),
       case when v_pct_drop >= 0 then '-' else '' end,
-      abs(v_pct_drop)
+      round(abs(v_pct_drop), 1)
     );
 
     for v_token in

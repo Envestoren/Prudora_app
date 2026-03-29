@@ -81,8 +81,7 @@ export default function ShoppingListDetailsScreen() {
   const { user } = useAuth();
 
   const goBackToShoppingLists = () => {
-    // Handlelisteoversikt (tabben "Handlelister")
-    router.replace('/(tabs)/explore');
+    router.back();
   };
 
   const [list, setList] = useState<ShoppingList | null>(null);

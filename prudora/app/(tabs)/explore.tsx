@@ -98,13 +98,13 @@ export default function ShoppingListsScreen() {
     setIcon('📋');
     setCreating(false);
 
-    router.push({ pathname: '/(tabs)/shopping-list/[id]', params: { id: data.id } });
+    router.push({ pathname: '/shopping-list/[id]', params: { id: data.id } });
   }
 
   function renderListItem({ item }: { item: ShoppingList }) {
     return (
       <Pressable
-        onPress={() => router.push({ pathname: '/(tabs)/shopping-list/[id]', params: { id: item.id } })}
+        onPress={() => router.push({ pathname: '/shopping-list/[id]', params: { id: item.id } })}
         mt={spacing.sm}
         borderRadius={radius.lg}
         borderWidth={hairlineWidth}

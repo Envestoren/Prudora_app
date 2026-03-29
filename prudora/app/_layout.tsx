@@ -32,6 +32,10 @@ function RootLayoutContent() {
             />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="store/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="product/[id]/index" options={{ headerShown: false }} />
+            <Stack.Screen name="product/[id]/store-prices/[storeId]" options={{ headerShown: false }} />
+            <Stack.Screen name="shopping-list/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="produkt-abonnement" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
         </AuthProvider>

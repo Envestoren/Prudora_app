@@ -20,6 +20,7 @@ export default function TabLayout() {
   const colors = Colors[colorScheme ?? 'light'];
   return (
     <Tabs
+      backBehavior="history"
       screenOptions={{
         tabBarActiveTintColor: colors.tabIconSelected,
         tabBarInactiveTintColor: colors.tabIconDefault,
@@ -55,13 +56,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="produkt-abonnement"
-        options={{
-          title: 'Abonnement',
-          tabBarIcon: ({ color }) => <IconSymbol size={24} name="bell.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="price-scan"
         options={{
           title: 'Pris-scan',
@@ -82,21 +76,18 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="gearshape.fill" color={color} />,
         }}
       />
-      {/* Skjul detaljruta for handleliste fra tab-baren */}
       <Tabs.Screen
-        name="shopping-list/[id]"
+        name="produkt-abonnement"
         options={{
           href: null,
         }}
       />
-      {/* Skjul produktdetalj fra tab-baren */}
       <Tabs.Screen
         name="product/[id]"
         options={{
           href: null,
         }}
       />
-      {/* Skjul butikk-prishistorikk fra tab-baren */}
       <Tabs.Screen
         name="product/[id]/store-prices/[storeId]"
         options={{

@@ -129,4 +129,7 @@ create policy "user_push_tokens_delete_own"
   on public.user_push_tokens for delete
   using (auth.uid() = user_id);
 
--- user_price_alert_events: ingen policies for authenticated → kun service_role
+-- user_price_alert_events: brukere kan lese egne events (for Expo Go polling-fallback)
+create policy "user_price_alert_events_select_own"
+  on public.user_price_alert_events for select
+  using (auth.uid() = user_id);

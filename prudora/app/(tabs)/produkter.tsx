@@ -284,10 +284,10 @@ export default function ProdukterScreen() {
           Produkter
         </Text>
         <HStack alignItems="center" space="sm">
-          <Box flex={1}>
+          <Box flex={1} style={{ minWidth: 0 }}>
             <Input size="md" variant="outline" style={inputStyle}>
               <InputField
-                placeholder="Søk etter produkt, leverandør eller produsent"
+                placeholder="Søk"
                 placeholderTextColor={c.textMuted}
                 value={search}
                 onChangeText={setSearch}
@@ -318,6 +318,24 @@ export default function ProdukterScreen() {
             accessibilityLabel="Skann strekkode"
           >
             <IconSymbol name="barcode.viewfinder" size={18} color={c.textSecondary} />
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/(tabs)/produkt-abonnement')}
+            hitSlop={10}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: c.surface,
+              borderWidth: hairlineWidth,
+              borderColor: c.border,
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Prisvarsler"
+          >
+            <IconSymbol name="bell.fill" size={18} color={c.textSecondary} />
           </Pressable>
         </HStack>
         {scanMessage && (

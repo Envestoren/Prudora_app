@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { formatKr, formatOneDecimal } from '@/lib/format-utils';
 import type { Session, User } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 import { Alert } from 'react-native';
@@ -228,7 +229,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [state.user?.id, syncExpoPushToken]);
 
   const sendLocalPriceAlertNotification = useCallback(async (title: string, body: string) => {
-    Alert.alert(title, body);
+    try {
+      const { setNotificationHandler } = await import(
+        'expo-notifications/build/NotificationsHandler'
+      );
+      const { getPermissionsAsync, requestPermissionsAsync } = await import(
+        'expo-notifications/build/NotificationPermissions'
+      );
+      const { scheduleNotificationAsync } = await import(
+        'expo-notifications/build/scheduleNotificationAsync'
+      );
+      setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+          shouldShowBanner: true,
+          shouldShowList: true,
+        }),
+      });
+      const { status } = await getPermissionsAsync();
+      if (status !== 'granted') {
+        const { status: newStatus } = await requestPermissionsAsync();
+        if (newStatus !== 'granted') {
+          Alert.alert(title, body);
+          return;
+        }
+      }
+      await scheduleNotificationAsync({
+        content: { title, body, sound: true },
+        trigger: null,
+      });
+    } catch {
+      Alert.alert(title, body);
+    }
   }, []);
 
   useEffect(() => {
@@ -319,8 +353,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ? `${(storeData as any).chain} - ${(storeData as any).name}`
         : ((storeData as any)?.chain ?? 'Butikk');
       const summary = hasOld
-        ? `${oldPrice.toFixed(2)} kr -> ${newPrice.toFixed(2)} kr (${deltaPct != null ? `${deltaPct.toFixed(1)}%` : ''})`
-        : `${newPrice.toFixed(2)} kr`;
+        ? `${formatKr(oldPrice)} kr -> ${formatKr(newPrice)} kr (${deltaPct != null ? `${formatOneDecimal(deltaPct)}%` : ''})`
+        : `${formatKr(newPrice)} kr`;
 
       await sendLocalPriceAlertNotification(
         'Prudora Prisvarsel',
